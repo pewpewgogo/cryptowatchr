@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { createBot, menuKeyboard, inlineKeyboard } from "@agntdev/bot-toolkit";
-import { createStore, newAlertRule, newPercentAlertRule, type AlertRule, type WatchlistEntry } from "./store.js";
+import { createStore, newAlertRule, newPercentAlertRule, type AlertRule, type WatchlistEntry, type MorningSummary } from "./store.js";
 import { fetchPrices, formatPriceDisplay } from "./price.js";
 
 export interface Session {
@@ -20,6 +20,7 @@ export interface Session {
   alertManageStep?: "edit_price" | "edit_percent" | "edit_timeframe";
   editingRuleId?: string;
   tempEditPercent?: number;
+  summaryStep?: "time";
 }
 
 const WELCOME_TEXT = [
@@ -271,12 +272,12 @@ const HELP_TEXT = [
   "/list — View your watchlist and manage tracked coins",
   "/alerts — View and manage your price alerts",
   "/price — Check current prices for a coin or your full watchlist",
+  "/summary — Configure your daily morning summary",
   "",
   "You can also use the menu buttons below to manage your watchlist, create alerts, check prices, and configure settings.",
 ].join("\n");
 
 const MENU_RESPONSES: Record<string, string> = {
-  "menu:settings": "Settings will manage timezone, quiet hours, cooldown, and morning summaries.",
   "menu:help": "Help will list commands and explain how CryptoWatchr alerts work.",
 };
 
@@ -593,6 +594,67 @@ function clearAlertSession(session: Session) {
   session.alertPctTimeframe = undefined;
 }
 
+function clearSummarySession(session: Session) {
+  session.summaryStep = undefined;
+}
+
+function settingsText(summary: MorningSummary | null) {
+  const lines = ["*Settings*"];
+  lines.push("");
+  if (summary) {
+    lines.push(`\u2022 Morning Summary: On at ${summary.time}`);
+  } else {
+    lines.push("\u2022 Morning Summary: Off");
+  }
+  lines.push("");
+  lines.push("Morning summary sends you a daily report of your watched coins at your chosen time.");
+  return lines.join("\n");
+}
+
+function settingsKeyboard(summary: MorningSummary | null) {
+  if (summary) {
+    return inlineKeyboard([
+      [{ text: "Change Summary Time", callback_data: "settings:summary:time" }],
+      [{ text: "Turn Off Summary", callback_data: "settings:summary:disable" }],
+      [{ text: "Back to menu", callback_data: "menu:back" }],
+    ]);
+  }
+  return inlineKeyboard([
+    [{ text: "Turn On Summary", callback_data: "settings:summary:enable" }],
+    [{ text: "Back to menu", callback_data: "menu:back" }],
+  ]);
+}
+
+function summaryStatusText(summary: MorningSummary | null) {
+  const lines = ["*Morning Summary*"];
+  lines.push("");
+  if (summary) {
+    lines.push(`Status: On at ${summary.time}`);
+    lines.push("");
+    lines.push("You will receive a daily summary of your watched coins at this time.");
+    lines.push("Use the buttons below to change the time or turn it off.");
+  } else {
+    lines.push("Status: Off");
+    lines.push("");
+    lines.push("Turn on morning summary to receive a daily report of your watched coins.");
+  }
+  return lines.join("\n");
+}
+
+function summaryStatusKeyboard(summary: MorningSummary | null) {
+  if (summary) {
+    return inlineKeyboard([
+      [{ text: "Change Summary Time", callback_data: "settings:summary:time" }],
+      [{ text: "Turn Off Summary", callback_data: "settings:summary:disable" }],
+      [{ text: "Back to menu", callback_data: "menu:back" }],
+    ]);
+  }
+  return inlineKeyboard([
+    [{ text: "Turn On Summary", callback_data: "settings:summary:enable" }],
+    [{ text: "Back to menu", callback_data: "menu:back" }],
+  ]);
+}
+
 export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
   const store = createStore();
   const bot = createBot<Session>(token, {
@@ -614,6 +676,7 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
     clearAlertSession(ctx.session);
     clearAlertManageSession(ctx.session);
     clearWatchlistSession(ctx.session);
+    clearSummarySession(ctx.session);
     ctx.session.onboardingStep = "timezone";
     await ctx.reply(WELCOME_TEXT, { reply_markup: timezoneKeyboard() });
   });
@@ -622,6 +685,7 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
     clearAlertSession(ctx.session);
     clearAlertManageSession(ctx.session);
     clearWatchlistSession(ctx.session);
+    clearSummarySession(ctx.session);
     await ctx.reply(HELP_TEXT, { parse_mode: "Markdown", reply_markup: mainMenu() });
   });
 
@@ -696,6 +760,21 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
     } catch {
       await ctx.reply("Unable to fetch price data right now. Please try again later.", { reply_markup: mainMenu() });
     }
+  });
+
+  bot.command("summary", async (ctx) => {
+    clearAlertSession(ctx.session);
+    clearAlertManageSession(ctx.session);
+    clearWatchlistSession(ctx.session);
+    clearSummarySession(ctx.session);
+    let summary: MorningSummary | null;
+    try {
+      summary = await store.getMorningSummary(ctx.chat!.id);
+    } catch {
+      await ctx.reply("Something went wrong. Please try again or use /help for assistance.");
+      return;
+    }
+    await ctx.reply(summaryStatusText(summary), { parse_mode: "Markdown", reply_markup: summaryStatusKeyboard(summary) });
   });
 
   bot.on("callback_query:data", async (ctx) => {
@@ -888,6 +967,7 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
       clearAlertSession(ctx.session);
       clearAlertManageSession(ctx.session);
       clearWatchlistSession(ctx.session);
+      clearSummarySession(ctx.session);
       await ctx.answerCallbackQuery();
       await ctx.editMessageText(MAIN_MENU_TEXT, { reply_markup: mainMenu() });
       return;
@@ -1179,6 +1259,80 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
       }
       return;
     }
+
+    // --- Settings callbacks ---
+
+    if (data === "menu:settings") {
+      clearAlertSession(ctx.session);
+      clearAlertManageSession(ctx.session);
+      clearWatchlistSession(ctx.session);
+      clearSummarySession(ctx.session);
+      let summary: MorningSummary | null;
+      try {
+        summary = await store.getMorningSummary(ctx.chat!.id);
+      } catch {
+        await ctx.answerCallbackQuery({ text: "Failed to load settings." });
+        return;
+      }
+      await ctx.answerCallbackQuery();
+      await ctx.editMessageText(settingsText(summary), { parse_mode: "Markdown", reply_markup: settingsKeyboard(summary) });
+      return;
+    }
+
+    if (data === "settings:summary:enable") {
+      ctx.session.summaryStep = "time";
+      await ctx.answerCallbackQuery();
+      await ctx.editMessageText(
+        "Enter the time for your daily morning summary (HH:MM, 24-hour format, in your timezone):\n\nExample: 08:00",
+        { reply_markup: inlineKeyboard([[{ text: "Back", callback_data: "settings:summary:back" }]]) },
+      );
+      return;
+    }
+
+    if (data === "settings:summary:time") {
+      ctx.session.summaryStep = "time";
+      await ctx.answerCallbackQuery();
+      await ctx.editMessageText(
+        "Enter the new time for your daily morning summary (HH:MM, 24-hour format, in your timezone):\n\nExample: 08:00",
+        { reply_markup: inlineKeyboard([[{ text: "Back", callback_data: "settings:summary:back" }]]) },
+      );
+      return;
+    }
+
+    if (data === "settings:summary:back") {
+      clearSummarySession(ctx.session);
+      let summary: MorningSummary | null;
+      try {
+        summary = await store.getMorningSummary(ctx.chat!.id);
+      } catch {
+        await ctx.answerCallbackQuery({ text: "Failed to load settings." });
+        return;
+      }
+      await ctx.answerCallbackQuery();
+      await ctx.editMessageText(settingsText(summary), { parse_mode: "Markdown", reply_markup: settingsKeyboard(summary) });
+      return;
+    }
+
+    if (data === "settings:summary:disable") {
+      try {
+        await store.deleteMorningSummary(ctx.chat!.id);
+      } catch {
+        await ctx.answerCallbackQuery({ text: "Failed to update settings." });
+        return;
+      }
+      let summary: MorningSummary | null;
+      try {
+        summary = await store.getMorningSummary(ctx.chat!.id);
+      } catch {
+        await ctx.answerCallbackQuery({ text: "Failed to load settings." });
+        return;
+      }
+      await ctx.answerCallbackQuery({ text: "Morning summary turned off." });
+      await ctx.editMessageText(settingsText(summary), { parse_mode: "Markdown", reply_markup: settingsKeyboard(summary) });
+      return;
+    }
+
+    // --- End settings callbacks ---
 
     const response = MENU_RESPONSES[data];
 
@@ -1574,6 +1728,42 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
     }
 
     // --- End alert management message handlers ---
+
+    // --- Morning summary message handlers ---
+
+    if (ctx.session.summaryStep === "time") {
+      const raw = ctx.message?.text?.trim();
+      const parsed = parseTime(raw ?? "");
+      if (!parsed) {
+        await ctx.reply(
+          "Please enter a valid time in HH:MM format (e.g. 08:00).",
+          { reply_markup: inlineKeyboard([[{ text: "Back", callback_data: "settings:summary:back" }]]) },
+        );
+        return;
+      }
+      try {
+        await store.setMorningSummary(ctx.chat!.id, parsed);
+      } catch {
+        await ctx.reply("Failed to save summary time. Please try again later.", { reply_markup: mainMenu() });
+        clearSummarySession(ctx.session);
+        return;
+      }
+      clearSummarySession(ctx.session);
+      let summary: MorningSummary | null;
+      try {
+        summary = await store.getMorningSummary(ctx.chat!.id);
+      } catch {
+        await ctx.reply("Morning summary is now on at " + parsed + ".", { reply_markup: mainMenu() });
+        return;
+      }
+      const statusText = summary
+        ? `Morning summary is now on at ${summary.time}.`
+        : "Morning summary is now on at " + parsed + ".";
+      await ctx.reply(statusText, { reply_markup: mainMenu() });
+      return;
+    }
+
+    // --- End morning summary message handlers ---
 
     await ctx.reply("CryptoWatchr is online. Send /start to begin setup.");
   });

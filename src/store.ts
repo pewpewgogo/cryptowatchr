@@ -25,6 +25,11 @@ export interface QuietHours {
   end: string;
 }
 
+export interface MorningSummary {
+  enabled: boolean;
+  time: string;
+}
+
 export interface PersistentStore {
   createAlertRule(rule: AlertRule): Promise<void>;
   getAlertRules(userId: number): Promise<AlertRule[]>;
@@ -36,6 +41,9 @@ export interface PersistentStore {
   getWatchlist(userId: number): Promise<WatchlistEntry[]>;
   removeFromWatchlist(userId: number, ticker: string): Promise<void>;
   isInWatchlist(userId: number, ticker: string): Promise<boolean>;
+  getMorningSummary(userId: number): Promise<MorningSummary | null>;
+  setMorningSummary(userId: number, time: string): Promise<void>;
+  deleteMorningSummary(userId: number): Promise<void>;
 }
 
 function createRedisClient(url: string) {
@@ -95,6 +103,23 @@ class RedisStore implements PersistentStore {
     await this.#client.del(key);
   }
 
+  async getMorningSummary(userId: number): Promise<MorningSummary | null> {
+    const key = `${PREFIX}morning_summary:${userId}`;
+    const raw = await this.#client.get(key);
+    if (!raw) return null;
+    return JSON.parse(raw) as MorningSummary;
+  }
+
+  async setMorningSummary(userId: number, time: string): Promise<void> {
+    const key = `${PREFIX}morning_summary:${userId}`;
+    await this.#client.set(key, JSON.stringify({ enabled: true, time }));
+  }
+
+  async deleteMorningSummary(userId: number): Promise<void> {
+    const key = `${PREFIX}morning_summary:${userId}`;
+    await this.#client.del(key);
+  }
+
   async addToWatchlist(userId: number, ticker: string, coinId: string): Promise<void> {
     const entry: WatchlistEntry = { userId, ticker, coinId, addedAt: new Date().toISOString() };
     await this.#client.hset(WATCHLIST_KEY(userId), ticker, JSON.stringify(entry));
@@ -120,6 +145,7 @@ class MemoryStore implements PersistentStore {
   #rules = new Map<string, AlertRule>();
   #userRules = new Map<number, Set<string>>();
   #quietHours = new Map<number, QuietHours>();
+  #morningSummary = new Map<number, MorningSummary>();
   #watchlist = new Map<number, Map<string, WatchlistEntry>>();
 
   async createAlertRule(rule: AlertRule): Promise<void> {
@@ -153,6 +179,18 @@ class MemoryStore implements PersistentStore {
 
   async deleteQuietHours(userId: number): Promise<void> {
     this.#quietHours.delete(userId);
+  }
+
+  async getMorningSummary(userId: number): Promise<MorningSummary | null> {
+    return this.#morningSummary.get(userId) ?? null;
+  }
+
+  async setMorningSummary(userId: number, time: string): Promise<void> {
+    this.#morningSummary.set(userId, { enabled: true, time });
+  }
+
+  async deleteMorningSummary(userId: number): Promise<void> {
+    this.#morningSummary.delete(userId);
   }
 
   async addToWatchlist(userId: number, ticker: string, coinId: string): Promise<void> {
