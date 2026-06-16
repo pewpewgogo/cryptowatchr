@@ -20,9 +20,53 @@ const DEFAULT_QUIET_START = "22:00";
 const DEFAULT_QUIET_END = "07:00";
 const DEFAULT_COOLDOWN_HOURS = 1;
 
-function confirmText(tz: string) {
+const LANGUAGE_TO_TZ: Record<string, string> = {
+  ru: "UTC+3",
+  uk: "UTC+3",
+  be: "UTC+3",
+  kk: "UTC+3",
+  tr: "UTC+3",
+  ar: "UTC+3",
+  zh: "UTC+8",
+  ja: "UTC+9",
+  ko: "UTC+9",
+  th: "UTC+7",
+  vi: "UTC+7",
+  id: "UTC+7",
+  hi: "UTC+5:30",
+  bn: "UTC+6",
+  ur: "UTC+5",
+  fa: "UTC+3:30",
+  pt: "UTC-3",
+  fr: "UTC+1",
+  de: "UTC+1",
+  es: "UTC+1",
+  it: "UTC+1",
+  nl: "UTC+1",
+  pl: "UTC+1",
+  sv: "UTC+1",
+  nb: "UTC+1",
+  da: "UTC+1",
+  fi: "UTC+2",
+  el: "UTC+2",
+  ro: "UTC+2",
+  bg: "UTC+2",
+  cs: "UTC+1",
+  sk: "UTC+1",
+  hu: "UTC+1",
+};
+
+function detectTimezone(languageCode?: string): string {
+  if (languageCode) {
+    const tz = LANGUAGE_TO_TZ[languageCode] ?? LANGUAGE_TO_TZ[languageCode.split("-")[0]];
+    if (tz) return tz;
+  }
+  return "UTC+0";
+}
+
+function confirmText(tz: string, detected?: boolean) {
   return [
-    `Timezone set to ${tz}.`,
+    `Timezone set to ${tz}.${detected ? " (Auto-detected from your language settings.)" : ""}`,
     "",
     "Your default settings:",
     `\u2022 Quiet hours: ${DEFAULT_QUIET_START}\u2013${DEFAULT_QUIET_END} (alerts suppressed while you sleep)`,
@@ -133,7 +177,7 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
 
     if (data === "onboard:skip") {
       ctx.session.onboardingStep = undefined;
-      ctx.session.timezone = undefined;
+      ctx.session.timezone = detectTimezone(ctx.from?.language_code);
       await ctx.answerCallbackQuery();
       await ctx.editMessageText(MAIN_MENU_TEXT, { reply_markup: mainMenu() });
       return;

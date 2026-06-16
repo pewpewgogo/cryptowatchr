@@ -1,0 +1,181 @@
+[
+  {
+    "name": "skip auto-detects timezone from language code (ru -> UTC+3)",
+    "steps": [
+      {
+        "send": {
+          "update": {
+            "update_id": 1,
+            "message": {
+              "message_id": 1,
+              "date": 0,
+              "chat": { "id": 10, "type": "private", "first_name": "Test" },
+              "from": { "id": 10, "is_bot": false, "first_name": "Test", "language_code": "ru" },
+              "text": "/start",
+              "entities": [{ "type": "bot_command", "offset": 0, "length": 6 }]
+            }
+          }
+        },
+        "expect": [
+          { "method": "sendMessage" }
+        ]
+      },
+      {
+        "send": {
+          "update": {
+            "update_id": 2,
+            "callback_query": {
+              "id": "2",
+              "from": { "id": 10, "is_bot": false, "first_name": "Test", "language_code": "ru" },
+              "message": {
+                "message_id": 1,
+                "date": 0,
+                "chat": { "id": 10, "type": "private" },
+                "from": { "id": 42, "is_bot": true, "first_name": "TestBot" },
+                "text": "(previous)"
+              },
+              "chat_instance": "ci-10",
+              "data": "onboard:skip"
+            }
+          }
+        },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          {
+            "method": "editMessageText",
+            "payload": {
+              "text": "Welcome to CryptoWatchr.\n\nTrack coins, create price alerts, check the latest prices, and tune your quiet hours from the menu below."
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "skip auto-detects UTC+0 as fallback with unknown language",
+    "steps": [
+      {
+        "send": {
+          "update": {
+            "update_id": 1,
+            "message": {
+              "message_id": 1,
+              "date": 0,
+              "chat": { "id": 20, "type": "private", "first_name": "Test" },
+              "from": { "id": 20, "is_bot": false, "first_name": "Test", "language_code": "xx" },
+              "text": "/start",
+              "entities": [{ "type": "bot_command", "offset": 0, "length": 6 }]
+            }
+          }
+        },
+        "expect": [
+          { "method": "sendMessage" }
+        ]
+      },
+      {
+        "send": {
+          "update": {
+            "update_id": 2,
+            "callback_query": {
+              "id": "2",
+              "from": { "id": 20, "is_bot": false, "first_name": "Test", "language_code": "xx" },
+              "message": {
+                "message_id": 1,
+                "date": 0,
+                "chat": { "id": 20, "type": "private" },
+                "from": { "id": 42, "is_bot": true, "first_name": "TestBot" },
+                "text": "(previous)"
+              },
+              "chat_instance": "ci-20",
+              "data": "onboard:skip"
+            }
+          }
+        },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          {
+            "method": "editMessageText",
+            "payload": {
+              "text": "Welcome to CryptoWatchr.\n\nTrack coins, create price alerts, check the latest prices, and tune your quiet hours from the menu below."
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "skip auto-detects from zh language code to UTC+8",
+    "steps": [
+      {
+        "send": {
+          "update": {
+            "update_id": 1,
+            "message": {
+              "message_id": 1,
+              "date": 0,
+              "chat": { "id": 30, "type": "private", "first_name": "Test" },
+              "from": { "id": 30, "is_bot": false, "first_name": "Test", "language_code": "zh" },
+              "text": "/start",
+              "entities": [{ "type": "bot_command", "offset": 0, "length": 6 }]
+            }
+          }
+        },
+        "expect": [
+          { "method": "sendMessage" }
+        ]
+      },
+      {
+        "send": {
+          "update": {
+            "update_id": 2,
+            "callback_query": {
+              "id": "2",
+              "from": { "id": 30, "is_bot": false, "first_name": "Test", "language_code": "zh" },
+              "message": {
+                "message_id": 1,
+                "date": 0,
+                "chat": { "id": 30, "type": "private" },
+                "from": { "id": 42, "is_bot": true, "first_name": "TestBot" },
+                "text": "(previous)"
+              },
+              "chat_instance": "ci-30",
+              "data": "onboard:skip"
+            }
+          }
+        },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          {
+            "method": "editMessageText",
+            "payload": {
+              "text": "Welcome to CryptoWatchr.\n\nTrack coins, create price alerts, check the latest prices, and tune your quiet hours from the menu below."
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "skip auto-detects UTC+0 when language_code is absent",
+    "steps": [
+      {
+        "send": { "text": "/start", "chatId": 40, "userId": 40 },
+        "expect": [
+          { "method": "sendMessage" }
+        ]
+      },
+      {
+        "send": { "callback": "onboard:skip", "chatId": 40, "userId": 40, "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          {
+            "method": "editMessageText",
+            "payload": {
+              "text": "Welcome to CryptoWatchr.\n\nTrack coins, create price alerts, check the latest prices, and tune your quiet hours from the menu below."
+            }
+          }
+        ]
+      }
+    ]
+  }
+]
