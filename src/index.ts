@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { createBot, menuKeyboard, inlineKeyboard } from "@agntdev/bot-toolkit";
-import { createStore, newAlertRule, newPercentAlertRule, type WatchlistEntry } from "./store.js";
+import { createStore, newAlertRule, newPercentAlertRule, type AlertRule, type WatchlistEntry } from "./store.js";
 
 export interface Session {
   initializedAt: string;
@@ -16,6 +16,9 @@ export interface Session {
   alertPctPercent?: number;
   alertPctTimeframe?: number;
   watchlistStep?: "coin" | "custom";
+  alertManageStep?: "edit_price" | "edit_percent" | "edit_timeframe";
+  editingRuleId?: string;
+  tempEditPercent?: number;
 }
 
 const WELCOME_TEXT = [
@@ -265,6 +268,7 @@ const HELP_TEXT = [
   "/start — Set up your CryptoWatchr profile and open the main menu",
   "/help — Show this help message",
   "/list — View your watchlist and manage tracked coins",
+  "/alerts — View and manage your price alerts",
   "",
   "You can also use the menu buttons below to manage your watchlist, create alerts, check prices, and configure settings.",
 ].join("\n");
@@ -344,6 +348,7 @@ function mainMenu() {
       { text: "Add Coin", data: "menu:add" },
       { text: "My Watchlist", data: "menu:watchlist" },
       { text: "Create Alert", data: "menu:alerts" },
+      { text: "My Alerts", data: "menu:myalerts" },
       { text: "Price Check", data: "menu:price" },
       { text: "Settings", data: "menu:settings" },
       { text: "Help", data: "menu:help" },
@@ -483,6 +488,101 @@ function pctAlertCreatedText(coin: string, percent: number, timeframeMinutes: nu
   return `Percent alert created: ${coinLabel} moves more than ${formattedPercent}% in ${timeframeLabel}`;
 }
 
+const EMPTY_ALERTS_TEXT = "You don't have any alerts yet.\n\nUse Create Alert to set up price alerts for your coins.";
+
+function formatAlertDescription(rule: AlertRule): string {
+  if (rule.type === "threshold") {
+    const formattedPrice = rule.price!.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return `${rule.coin} ${rule.direction} $${formattedPrice}`;
+  }
+  const formattedPercent = rule.percent!.toLocaleString("en-US", { maximumFractionDigits: 2 });
+  const coinLabel = rule.coin === "any" ? "any coin in your watchlist" : rule.coin;
+  let timeframeLabel: string;
+  const mins = rule.timeframeMinutes!;
+  if (mins >= 60 && mins % 60 === 0) {
+    const h = mins / 60;
+    timeframeLabel = h === 1 ? "1 hour" : `${h} hours`;
+  } else {
+    timeframeLabel = `${mins} minutes`;
+  }
+  return `${coinLabel} moves more than ${formattedPercent}% in ${timeframeLabel}`;
+}
+
+function myAlertsText(rules: AlertRule[]): string {
+  if (rules.length === 0) return EMPTY_ALERTS_TEXT;
+  const lines = ["Your alerts:"];
+  for (let i = 0; i < rules.length; i++) {
+    lines.push(`${i + 1}. ${formatAlertDescription(rules[i])}`);
+  }
+  lines.push("", "Tap Edit to modify or Delete to remove an alert.");
+  return lines.join("\n");
+}
+
+function myAlertsKeyboard(rules: AlertRule[]) {
+  const rows = rules.map((r) => [
+    { text: "Edit", callback_data: `alerts:edit:${r.id}` },
+    { text: "Delete", callback_data: `alerts:delete:${r.id}` },
+  ]);
+  rows.push([{ text: "Back to menu", callback_data: "menu:back" }]);
+  return inlineKeyboard(rows);
+}
+
+function deleteConfirmText(rule: AlertRule): string {
+  return `Are you sure you want to delete this alert?\n\n${formatAlertDescription(rule)}`;
+}
+
+function deleteConfirmKeyboard(ruleId: string) {
+  return inlineKeyboard([
+    [{ text: "Yes, delete", callback_data: `alerts:delete:confirm:${ruleId}` }],
+    [{ text: "Cancel", callback_data: "alerts:delete:cancel" }],
+  ]);
+}
+
+function editPricePromptText(rule: AlertRule): string {
+  return `Edit threshold for:\n\n${rule.coin} ${rule.direction}\n\nCurrent: $${rule.price!.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\nEnter the new price threshold:`;
+}
+
+function editPriceKeyboard() {
+  return inlineKeyboard([
+    [{ text: "Cancel", callback_data: "alerts:edit:cancel" }],
+  ]);
+}
+
+function editPercentPromptText(rule: AlertRule): string {
+  return `Edit percent for:\n\n${rule.coin}\n\nCurrent: ${rule.percent!.toLocaleString("en-US", { maximumFractionDigits: 2 })}%\n\nEnter the new percentage:`;
+}
+
+function editPercentKeyboard() {
+  return inlineKeyboard([
+    [{ text: "Cancel", callback_data: "alerts:edit:cancel" }],
+  ]);
+}
+
+function editTimeframePromptText(rule: AlertRule): string {
+  let label: string;
+  const mins = rule.timeframeMinutes!;
+  if (mins >= 60 && mins % 60 === 0) {
+    const h = mins / 60;
+    label = h === 1 ? "1 hour" : `${h} hours`;
+  } else {
+    label = `${mins} minutes`;
+  }
+  return `Edit timeframe for:\n\n${rule.coin}\n\nCurrent: ${label}\n\nEnter the new timeframe (e.g. 1h, 4h, 30m, or 60 for minutes):`;
+}
+
+function editTimeframeKeyboard() {
+  return inlineKeyboard([
+    [{ text: "Back", callback_data: "alerts:edit:back:timeframe" }],
+    [{ text: "Cancel", callback_data: "alerts:edit:cancel" }],
+  ]);
+}
+
+function clearAlertManageSession(session: Session) {
+  session.alertManageStep = undefined;
+  session.editingRuleId = undefined;
+  session.tempEditPercent = undefined;
+}
+
 function clearAlertSession(session: Session) {
   session.alertStep = undefined;
   session.alertCoin = undefined;
@@ -511,6 +611,7 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
 
   bot.command("start", async (ctx) => {
     clearAlertSession(ctx.session);
+    clearAlertManageSession(ctx.session);
     clearWatchlistSession(ctx.session);
     ctx.session.onboardingStep = "timezone";
     await ctx.reply(WELCOME_TEXT, { reply_markup: timezoneKeyboard() });
@@ -518,6 +619,7 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
 
   bot.command("help", async (ctx) => {
     clearAlertSession(ctx.session);
+    clearAlertManageSession(ctx.session);
     clearWatchlistSession(ctx.session);
     await ctx.reply(HELP_TEXT, { parse_mode: "Markdown", reply_markup: mainMenu() });
   });
@@ -533,6 +635,20 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
       return;
     }
     await ctx.reply(myWatchlistText(entries), { reply_markup: entries.length > 0 ? myWatchlistKeyboard(entries) : mainMenu() });
+  });
+
+  bot.command("alerts", async (ctx) => {
+    clearAlertSession(ctx.session);
+    clearAlertManageSession(ctx.session);
+    clearWatchlistSession(ctx.session);
+    let rules: AlertRule[];
+    try {
+      rules = await store.getAlertRules(ctx.chat!.id);
+    } catch {
+      await ctx.reply("Something went wrong. Please try again or use /help for assistance.");
+      return;
+    }
+    await ctx.reply(myAlertsText(rules), { reply_markup: rules.length > 0 ? myAlertsKeyboard(rules) : mainMenu() });
   });
 
   bot.on("callback_query:data", async (ctx) => {
@@ -701,8 +817,29 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
       return;
     }
 
+    if (data === "menu:myalerts") {
+      clearAlertSession(ctx.session);
+      clearAlertManageSession(ctx.session);
+      clearWatchlistSession(ctx.session);
+      let rules: AlertRule[];
+      try {
+        rules = await store.getAlertRules(ctx.chat!.id);
+      } catch {
+        await ctx.answerCallbackQuery({ text: "Failed to load alerts." });
+        return;
+      }
+      await ctx.answerCallbackQuery();
+      if (rules.length === 0) {
+        await ctx.editMessageText(EMPTY_ALERTS_TEXT, { reply_markup: mainMenu() });
+      } else {
+        await ctx.editMessageText(myAlertsText(rules), { reply_markup: myAlertsKeyboard(rules) });
+      }
+      return;
+    }
+
     if (data === "menu:back") {
       clearAlertSession(ctx.session);
+      clearAlertManageSession(ctx.session);
       clearWatchlistSession(ctx.session);
       await ctx.answerCallbackQuery();
       await ctx.editMessageText(MAIN_MENU_TEXT, { reply_markup: mainMenu() });
@@ -823,6 +960,149 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
     }
 
     // --- End alert flow callbacks ---
+
+    // --- Alert management callbacks ---
+
+    if (data === "alerts:delete:cancel") {
+      clearAlertManageSession(ctx.session);
+      let rules: AlertRule[];
+      try {
+        rules = await store.getAlertRules(ctx.chat!.id);
+      } catch {
+        await ctx.answerCallbackQuery({ text: "Failed to load alerts." });
+        await ctx.editMessageText(MAIN_MENU_TEXT, { reply_markup: mainMenu() });
+        return;
+      }
+      await ctx.answerCallbackQuery();
+      if (rules.length === 0) {
+        await ctx.editMessageText(EMPTY_ALERTS_TEXT, { reply_markup: mainMenu() });
+      } else {
+        await ctx.editMessageText(myAlertsText(rules), { reply_markup: myAlertsKeyboard(rules) });
+      }
+      return;
+    }
+
+    if (data.startsWith("alerts:delete:confirm:")) {
+      const ruleId = data.slice("alerts:delete:confirm:".length);
+      try {
+        await store.deleteAlertRule(ctx.chat!.id, ruleId);
+      } catch {
+        await ctx.answerCallbackQuery({ text: "Failed to delete alert." });
+        return;
+      }
+      await ctx.answerCallbackQuery({ text: "Alert deleted." });
+      let rules: AlertRule[];
+      try {
+        rules = await store.getAlertRules(ctx.chat!.id);
+      } catch {
+        await ctx.editMessageText("Something went wrong.", { reply_markup: mainMenu() });
+        return;
+      }
+      if (rules.length === 0) {
+        await ctx.editMessageText(EMPTY_ALERTS_TEXT, { reply_markup: mainMenu() });
+      } else {
+        await ctx.editMessageText(myAlertsText(rules), { reply_markup: myAlertsKeyboard(rules) });
+      }
+      return;
+    }
+
+    if (data.startsWith("alerts:delete:")) {
+      const ruleId = data.slice("alerts:delete:".length);
+      let rules: AlertRule[];
+      try {
+        rules = await store.getAlertRules(ctx.chat!.id);
+      } catch {
+        await ctx.answerCallbackQuery({ text: "Failed to load alert." });
+        return;
+      }
+      const rule = rules.find((r) => r.id === ruleId);
+      if (!rule) {
+        await ctx.answerCallbackQuery({ text: "Alert not found." });
+        return;
+      }
+      await ctx.answerCallbackQuery();
+      await ctx.editMessageText(deleteConfirmText(rule), { reply_markup: deleteConfirmKeyboard(ruleId) });
+      return;
+    }
+
+    if (data === "alerts:edit:cancel") {
+      clearAlertManageSession(ctx.session);
+      let rules: AlertRule[];
+      try {
+        rules = await store.getAlertRules(ctx.chat!.id);
+      } catch {
+        await ctx.answerCallbackQuery({ text: "Failed to load alerts." });
+        await ctx.editMessageText(MAIN_MENU_TEXT, { reply_markup: mainMenu() });
+        return;
+      }
+      await ctx.answerCallbackQuery();
+      if (rules.length === 0) {
+        await ctx.editMessageText(EMPTY_ALERTS_TEXT, { reply_markup: mainMenu() });
+      } else {
+        await ctx.editMessageText(myAlertsText(rules), { reply_markup: myAlertsKeyboard(rules) });
+      }
+      return;
+    }
+
+    if (data === "alerts:edit:back:timeframe") {
+      ctx.session.alertManageStep = "edit_percent";
+      if (!ctx.session.editingRuleId) {
+        clearAlertManageSession(ctx.session);
+        await ctx.answerCallbackQuery();
+        await ctx.editMessageText(MAIN_MENU_TEXT, { reply_markup: mainMenu() });
+        return;
+      }
+      let rules: AlertRule[];
+      try {
+        rules = await store.getAlertRules(ctx.chat!.id);
+      } catch {
+        clearAlertManageSession(ctx.session);
+        await ctx.answerCallbackQuery({ text: "Failed to load alert." });
+        await ctx.editMessageText(MAIN_MENU_TEXT, { reply_markup: mainMenu() });
+        return;
+      }
+      const rule = rules.find((r) => r.id === ctx.session.editingRuleId);
+      if (!rule) {
+        clearAlertManageSession(ctx.session);
+        await ctx.answerCallbackQuery({ text: "Alert not found." });
+        await ctx.editMessageText(MAIN_MENU_TEXT, { reply_markup: mainMenu() });
+        return;
+      }
+      await ctx.answerCallbackQuery();
+      await ctx.editMessageText(editPercentPromptText(rule), { reply_markup: editPercentKeyboard() });
+      return;
+    }
+
+    if (data.startsWith("alerts:edit:")) {
+      const ruleId = data.slice("alerts:edit:".length);
+      clearAlertSession(ctx.session);
+      clearAlertManageSession(ctx.session);
+      let rules: AlertRule[];
+      try {
+        rules = await store.getAlertRules(ctx.chat!.id);
+      } catch {
+        await ctx.answerCallbackQuery({ text: "Failed to load alert." });
+        return;
+      }
+      const rule = rules.find((r) => r.id === ruleId);
+      if (!rule) {
+        await ctx.answerCallbackQuery({ text: "Alert not found." });
+        return;
+      }
+      ctx.session.editingRuleId = ruleId;
+      if (rule.type === "threshold") {
+        ctx.session.alertManageStep = "edit_price";
+        await ctx.answerCallbackQuery();
+        await ctx.editMessageText(editPricePromptText(rule), { reply_markup: editPriceKeyboard() });
+      } else {
+        ctx.session.alertManageStep = "edit_percent";
+        await ctx.answerCallbackQuery();
+        await ctx.editMessageText(editPercentPromptText(rule), { reply_markup: editPercentKeyboard() });
+      }
+      return;
+    }
+
+    // --- End alert management callbacks ---
 
     const response = MENU_RESPONSES[data];
 
@@ -1097,6 +1377,127 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
     }
 
     // --- End alert flow message handlers ---
+
+    // --- Alert management message handlers ---
+
+    if (ctx.session.alertManageStep === "edit_price") {
+      const raw = ctx.message?.text?.trim().replace(/[,\s$]/g, "");
+      const price = Number(raw);
+      if (isNaN(price) || price <= 0) {
+        await ctx.reply("Please enter a valid positive number for the price in USD.", { reply_markup: editPriceKeyboard() });
+        return;
+      }
+      let rules: AlertRule[];
+      try {
+        rules = await store.getAlertRules(ctx.chat!.id);
+      } catch {
+        clearAlertManageSession(ctx.session);
+        await ctx.reply("Failed to load your alerts.", { reply_markup: mainMenu() });
+        return;
+      }
+      const rule = rules.find((r) => r.id === ctx.session.editingRuleId);
+      if (!rule) {
+        clearAlertManageSession(ctx.session);
+        await ctx.reply("Alert not found.", { reply_markup: mainMenu() });
+        return;
+      }
+      const updated: AlertRule = { ...rule, price };
+      try {
+        await store.createAlertRule(updated);
+      } catch {
+        await ctx.reply("Failed to update alert.", { reply_markup: mainMenu() });
+        clearAlertManageSession(ctx.session);
+        return;
+      }
+      clearAlertManageSession(ctx.session);
+      await ctx.reply(`Alert updated: ${formatAlertDescription(updated)}`, { reply_markup: mainMenu() });
+      return;
+    }
+
+    if (ctx.session.alertManageStep === "edit_percent") {
+      const raw = ctx.message?.text?.trim().replace(/[,\s%]/g, "");
+      const percent = Number(raw);
+      if (isNaN(percent) || percent <= 0) {
+        await ctx.reply("Please enter a valid positive percentage (e.g. 5 for 5%).", { reply_markup: editPercentKeyboard() });
+        return;
+      }
+      let rules: AlertRule[];
+      try {
+        rules = await store.getAlertRules(ctx.chat!.id);
+      } catch {
+        clearAlertManageSession(ctx.session);
+        await ctx.reply("Failed to load your alerts.", { reply_markup: mainMenu() });
+        return;
+      }
+      const rule = rules.find((r) => r.id === ctx.session.editingRuleId);
+      if (!rule) {
+        clearAlertManageSession(ctx.session);
+        await ctx.reply("Alert not found.", { reply_markup: mainMenu() });
+        return;
+      }
+      ctx.session.alertManageStep = "edit_timeframe";
+      ctx.session.tempEditPercent = percent;
+      await ctx.reply(editTimeframePromptText(rule), { reply_markup: editTimeframeKeyboard() });
+      return;
+    }
+
+    if (ctx.session.alertManageStep === "edit_timeframe") {
+      const raw = ctx.message?.text?.trim().toLowerCase();
+
+      if (!raw) {
+        await ctx.reply("Please enter a valid timeframe (e.g. 1h, 4h, 30m, or 60 for minutes).", { reply_markup: editTimeframeKeyboard() });
+        return;
+      }
+
+      let minutes: number;
+
+      const hMatch = raw.match(/^([\d.]+)\s*h$/);
+      const mMatch = raw.match(/^([\d.]+)\s*m$/);
+      const numMatch = raw.match(/^([\d.]+)$/);
+
+      if (hMatch) {
+        minutes = Math.round(Number(hMatch[1]) * 60);
+      } else if (mMatch) {
+        minutes = Math.round(Number(mMatch[1]));
+      } else if (numMatch) {
+        minutes = Math.round(Number(numMatch[1]));
+      } else {
+        minutes = NaN;
+      }
+
+      if (isNaN(minutes) || minutes <= 0) {
+        await ctx.reply("Please enter a valid timeframe (e.g. 1h, 4h, 30m, or 60 for minutes).", { reply_markup: editTimeframeKeyboard() });
+        return;
+      }
+
+      let rules: AlertRule[];
+      try {
+        rules = await store.getAlertRules(ctx.chat!.id);
+      } catch {
+        clearAlertManageSession(ctx.session);
+        await ctx.reply("Failed to load your alerts.", { reply_markup: mainMenu() });
+        return;
+      }
+      const rule = rules.find((r) => r.id === ctx.session.editingRuleId);
+      if (!rule) {
+        clearAlertManageSession(ctx.session);
+        await ctx.reply("Alert not found.", { reply_markup: mainMenu() });
+        return;
+      }
+      const updated: AlertRule = { ...rule, percent: ctx.session.tempEditPercent, timeframeMinutes: minutes };
+      try {
+        await store.createAlertRule(updated);
+      } catch {
+        await ctx.reply("Failed to update alert.", { reply_markup: mainMenu() });
+        clearAlertManageSession(ctx.session);
+        return;
+      }
+      clearAlertManageSession(ctx.session);
+      await ctx.reply(`Alert updated: ${formatAlertDescription(updated)}`, { reply_markup: mainMenu() });
+      return;
+    }
+
+    // --- End alert management message handlers ---
 
     await ctx.reply("CryptoWatchr is online. Send /start to begin setup.");
   });

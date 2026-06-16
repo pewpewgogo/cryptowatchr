@@ -1,0 +1,490 @@
+[
+  {
+    "name": "my alerts menu shows empty state",
+    "steps": [
+      {
+        "send": { "text": "/start" },
+        "expect": [{ "method": "sendMessage" }]
+      },
+      {
+        "send": { "callback": "onboard:skip", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "menu:myalerts", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          {
+            "method": "editMessageText",
+            "payload": {
+              "text": "You don't have any alerts yet.\n\nUse Create Alert to set up price alerts for your coins.",
+              "reply_markup": {
+                "inline_keyboard": [
+                  [
+                    { "text": "Add Coin", "callback_data": "menu:add" },
+                    { "text": "My Watchlist", "callback_data": "menu:watchlist" }
+                  ],
+                  [
+                    { "text": "Create Alert", "callback_data": "menu:alerts" },
+                    { "text": "My Alerts", "callback_data": "menu:myalerts" }
+                  ],
+                  [
+                    { "text": "Price Check", "callback_data": "menu:price" },
+                    { "text": "Settings", "callback_data": "menu:settings" }
+                  ],
+                  [
+                    { "text": "Help", "callback_data": "menu:help" }
+                  ]
+                ]
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "/alerts command shows empty state",
+    "steps": [
+      {
+        "send": { "text": "/start" },
+        "expect": [{ "method": "sendMessage" }]
+      },
+      {
+        "send": { "callback": "onboard:skip", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "text": "/alerts" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "You don't have any alerts yet.\n\nUse Create Alert to set up price alerts for your coins.",
+              "reply_markup": {
+                "inline_keyboard": [
+                  [
+                    { "text": "Add Coin", "callback_data": "menu:add" },
+                    { "text": "My Watchlist", "callback_data": "menu:watchlist" }
+                  ],
+                  [
+                    { "text": "Create Alert", "callback_data": "menu:alerts" },
+                    { "text": "My Alerts", "callback_data": "menu:myalerts" }
+                  ],
+                  [
+                    { "text": "Price Check", "callback_data": "menu:price" },
+                    { "text": "Settings", "callback_data": "menu:settings" }
+                  ],
+                  [
+                    { "text": "Help", "callback_data": "menu:help" }
+                  ]
+                ]
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "view threshold alert in my alerts list",
+    "steps": [
+      {
+        "send": { "text": "/start" },
+        "expect": [{ "method": "sendMessage" }]
+      },
+      {
+        "send": { "callback": "onboard:tz:UTC+3", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "onboard:done", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "menu:alerts", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "alert:type:threshold", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "alert:coin:BTC", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "alert:dir:above", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "text": "60000" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "Alert created: BTC above $60,000.00",
+              "reply_markup": {
+                "inline_keyboard": [
+                  [
+                    { "text": "Add Coin", "callback_data": "menu:add" },
+                    { "text": "My Watchlist", "callback_data": "menu:watchlist" }
+                  ],
+                  [
+                    { "text": "Create Alert", "callback_data": "menu:alerts" },
+                    { "text": "My Alerts", "callback_data": "menu:myalerts" }
+                  ],
+                  [
+                    { "text": "Price Check", "callback_data": "menu:price" },
+                    { "text": "Settings", "callback_data": "menu:settings" }
+                  ],
+                  [
+                    { "text": "Help", "callback_data": "menu:help" }
+                  ]
+                ]
+              }
+            }
+          }
+        ]
+      },
+      {
+        "send": { "callback": "menu:myalerts", "messageId": 2 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "view percent alert in my alerts list",
+    "steps": [
+      {
+        "send": { "text": "/start" },
+        "expect": [{ "method": "sendMessage" }]
+      },
+      {
+        "send": { "callback": "onboard:tz:UTC+3", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "onboard:done", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "menu:alerts", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "alert:type:percent", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "alert:pcoin:BTC", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "text": "5" },
+        "expect": [{ "method": "sendMessage" }]
+      },
+      {
+        "send": { "text": "1h" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "Percent alert created: BTC moves more than 5% in 1 hour",
+              "reply_markup": {
+                "inline_keyboard": [
+                  [
+                    { "text": "Add Coin", "callback_data": "menu:add" },
+                    { "text": "My Watchlist", "callback_data": "menu:watchlist" }
+                  ],
+                  [
+                    { "text": "Create Alert", "callback_data": "menu:alerts" },
+                    { "text": "My Alerts", "callback_data": "menu:myalerts" }
+                  ],
+                  [
+                    { "text": "Price Check", "callback_data": "menu:price" },
+                    { "text": "Settings", "callback_data": "menu:settings" }
+                  ],
+                  [
+                    { "text": "Help", "callback_data": "menu:help" }
+                  ]
+                ]
+              }
+            }
+          }
+        ]
+      },
+      {
+        "send": { "callback": "menu:myalerts", "messageId": 3 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "back to menu from alerts list",
+    "steps": [
+      {
+        "send": { "text": "/start" },
+        "expect": [{ "method": "sendMessage" }]
+      },
+      {
+        "send": { "callback": "onboard:tz:UTC+3", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "onboard:done", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "menu:alerts", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "alert:type:threshold", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "alert:coin:BTC", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "alert:dir:above", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "text": "60000" },
+        "expect": [{ "method": "sendMessage" }]
+      },
+      {
+        "send": { "callback": "menu:myalerts", "messageId": 2 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "menu:back", "messageId": 2 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          {
+            "method": "editMessageText",
+            "payload": {
+              "text": "Welcome to CryptoWatchr.\n\nTrack coins, create price alerts, check the latest prices, and tune your quiet hours from the menu below.",
+              "reply_markup": {
+                "inline_keyboard": [
+                  [
+                    { "text": "Add Coin", "callback_data": "menu:add" },
+                    { "text": "My Watchlist", "callback_data": "menu:watchlist" }
+                  ],
+                  [
+                    { "text": "Create Alert", "callback_data": "menu:alerts" },
+                    { "text": "My Alerts", "callback_data": "menu:myalerts" }
+                  ],
+                  [
+                    { "text": "Price Check", "callback_data": "menu:price" },
+                    { "text": "Settings", "callback_data": "menu:settings" }
+                  ],
+                  [
+                    { "text": "Help", "callback_data": "menu:help" }
+                  ]
+                ]
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "/alerts command shows existing threshold alert",
+    "steps": [
+      {
+        "send": { "text": "/start" },
+        "expect": [{ "method": "sendMessage" }]
+      },
+      {
+        "send": { "callback": "onboard:tz:UTC+3", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "onboard:done", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "menu:alerts", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "alert:type:threshold", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "alert:coin:BTC", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "alert:dir:below", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "text": "45000" },
+        "expect": [{ "method": "sendMessage" }]
+      },
+      {
+        "send": { "text": "/alerts" },
+        "expect": [{ "method": "sendMessage" }]
+      }
+    ]
+  },
+  {
+    "name": "/start resets alert manage session",
+    "steps": [
+      {
+        "send": { "text": "/start" },
+        "expect": [{ "method": "sendMessage" }]
+      },
+      {
+        "send": { "callback": "onboard:tz:UTC+3", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "onboard:done", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "menu:alerts", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "alert:type:threshold", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "alert:coin:BTC", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "text": "/start" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "reply_markup": {
+                "inline_keyboard": [
+                  [
+                    { "text": "UTC-8 (PST)", "callback_data": "onboard:tz:UTC-8" },
+                    { "text": "UTC-5 (EST)", "callback_data": "onboard:tz:UTC-5" }
+                  ],
+                  [
+                    { "text": "UTC+0 (GMT)", "callback_data": "onboard:tz:UTC+0" },
+                    { "text": "UTC+3 (MSK)", "callback_data": "onboard:tz:UTC+3" }
+                  ],
+                  [
+                    { "text": "UTC+8 (CST)", "callback_data": "onboard:tz:UTC+8" },
+                    { "text": "Skip for now", "callback_data": "onboard:skip" }
+                  ]
+                ]
+              }
+            }
+          }
+        ]
+      }
+    ]
+  }
+]
