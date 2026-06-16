@@ -11,6 +11,16 @@ const MAIN_MENU_TEXT = [
   "Track coins, create price alerts, check the latest prices, and tune your quiet hours from the menu below.",
 ].join("\n");
 
+const HELP_TEXT = [
+  "*CryptoWatchr Help*",
+  "",
+  "Available commands:",
+  "/start — Set up your CryptoWatchr profile and open the main menu",
+  "/help — Show this help message",
+  "",
+  "You can also use the menu buttons below to manage your watchlist, create alerts, check prices, and configure settings.",
+].join("\n");
+
 const MENU_RESPONSES: Record<string, string> = {
   "menu:add": "Add Coin will let you add BTC, ETH, TON, or a custom ticker to your watchlist.",
   "menu:watchlist": "My Watchlist will show your tracked coins and remove buttons.",
@@ -37,10 +47,25 @@ function mainMenu() {
 export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
   const bot = createBot<Session>(token, {
     initial: () => ({ initializedAt: new Date(0).toISOString() }),
+    onError: async (err) => {
+      console.error("[CryptoWatchr] unhandled error:", err);
+      const botErr = err as { error: unknown; ctx?: { reply?: (text: string) => Promise<unknown>; chat?: { id: number } } };
+      if (botErr.ctx?.chat?.id && typeof botErr.ctx.reply === "function") {
+        try {
+          await botErr.ctx.reply("Something went wrong. Please try again or use /help for assistance.");
+        } catch {
+          // best-effort reply; ignore if it also fails
+        }
+      }
+    },
   });
 
   bot.command("start", async (ctx) => {
     await ctx.reply(MAIN_MENU_TEXT, { reply_markup: mainMenu() });
+  });
+
+  bot.command("help", async (ctx) => {
+    await ctx.reply(HELP_TEXT, { parse_mode: "Markdown", reply_markup: mainMenu() });
   });
 
   bot.on("callback_query:data", async (ctx) => {
@@ -58,6 +83,7 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
 
   bot.on("message", async (ctx) => {
     if (ctx.message?.text?.startsWith("/")) {
+      await ctx.reply("Unknown command. Type /help to see available commands.");
       return;
     }
 

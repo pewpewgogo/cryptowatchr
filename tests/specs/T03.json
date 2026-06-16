@@ -1,0 +1,51 @@
+[
+  {
+    "name": "/help shows the command list with the main menu",
+    "steps": [
+      {
+        "send": { "text": "/help" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "*CryptoWatchr Help*\n\nAvailable commands:\n/start \u2014 Set up your CryptoWatchr profile and open the main menu\n/help \u2014 Show this help message\n\nYou can also use the menu buttons below to manage your watchlist, create alerts, check prices, and configure settings.",
+              "parse_mode": "Markdown",
+              "reply_markup": {
+                "inline_keyboard": [
+                  [
+                    { "text": "Add Coin", "callback_data": "menu:add" },
+                    { "text": "My Watchlist", "callback_data": "menu:watchlist" }
+                  ],
+                  [
+                    { "text": "Create Alert", "callback_data": "menu:alerts" },
+                    { "text": "Price Check", "callback_data": "menu:price" }
+                  ],
+                  [
+                    { "text": "Settings", "callback_data": "menu:settings" },
+                    { "text": "Help", "callback_data": "menu:help" }
+                  ]
+                ]
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "unknown command replies with a friendly fallback",
+    "steps": [
+      {
+        "send": { "text": "/foo" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "Unknown command. Type /help to see available commands."
+            }
+          }
+        ]
+      }
+    ]
+  }
+]
