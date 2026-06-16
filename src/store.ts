@@ -30,6 +30,14 @@ export interface MorningSummary {
   time: string;
 }
 
+export interface PriceSnapshot {
+  coinId: string;
+  usd: number;
+  usd24hChange: number | null;
+  lastUpdatedAt: number;
+  polledAt: number;
+}
+
 export interface PersistentStore {
   createAlertRule(rule: AlertRule): Promise<void>;
   getAlertRules(userId: number): Promise<AlertRule[]>;
@@ -44,6 +52,9 @@ export interface PersistentStore {
   getMorningSummary(userId: number): Promise<MorningSummary | null>;
   setMorningSummary(userId: number, time: string): Promise<void>;
   deleteMorningSummary(userId: number): Promise<void>;
+  getAllTrackedCoinIds(): Promise<string[]>;
+  savePriceSnapshot(snapshot: PriceSnapshot): Promise<void>;
+  getLatestPriceSnapshot(coinId: string): Promise<PriceSnapshot | null>;
 }
 
 function createRedisClient(url: string) {
@@ -120,6 +131,37 @@ class RedisStore implements PersistentStore {
     await this.#client.del(key);
   }
 
+  async getAllTrackedCoinIds(): Promise<string[]> {
+    const coinIds = new Set<string>();
+    let cursor = "0";
+    do {
+      const [nextCursor, keys] = await this.#client.scan(cursor, "MATCH", `${PREFIX}watchlist:*`, "COUNT", 100);
+      cursor = nextCursor;
+      for (const key of keys) {
+        const raw = await this.#client.hgetall(key);
+        if (raw) {
+          for (const v of Object.values(raw)) {
+            const entry = JSON.parse(v as string) as WatchlistEntry;
+            coinIds.add(entry.coinId);
+          }
+        }
+      }
+    } while (cursor !== "0");
+    return [...coinIds];
+  }
+
+  async savePriceSnapshot(snapshot: PriceSnapshot): Promise<void> {
+    const key = `${PREFIX}snapshot:${snapshot.coinId}`;
+    await this.#client.set(key, JSON.stringify(snapshot));
+  }
+
+  async getLatestPriceSnapshot(coinId: string): Promise<PriceSnapshot | null> {
+    const key = `${PREFIX}snapshot:${coinId}`;
+    const raw = await this.#client.get(key);
+    if (!raw) return null;
+    return JSON.parse(raw) as PriceSnapshot;
+  }
+
   async addToWatchlist(userId: number, ticker: string, coinId: string): Promise<void> {
     const entry: WatchlistEntry = { userId, ticker, coinId, addedAt: new Date().toISOString() };
     await this.#client.hset(WATCHLIST_KEY(userId), ticker, JSON.stringify(entry));
@@ -191,6 +233,26 @@ class MemoryStore implements PersistentStore {
 
   async deleteMorningSummary(userId: number): Promise<void> {
     this.#morningSummary.delete(userId);
+  }
+
+  async getAllTrackedCoinIds(): Promise<string[]> {
+    const coinIds = new Set<string>();
+    for (const map of this.#watchlist.values()) {
+      for (const entry of map.values()) {
+        coinIds.add(entry.coinId);
+      }
+    }
+    return [...coinIds];
+  }
+
+  #snapshots = new Map<string, PriceSnapshot>();
+
+  async savePriceSnapshot(snapshot: PriceSnapshot): Promise<void> {
+    this.#snapshots.set(snapshot.coinId, snapshot);
+  }
+
+  async getLatestPriceSnapshot(coinId: string): Promise<PriceSnapshot | null> {
+    return this.#snapshots.get(coinId) ?? null;
   }
 
   async addToWatchlist(userId: number, ticker: string, coinId: string): Promise<void> {

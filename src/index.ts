@@ -1,7 +1,8 @@
 import { fileURLToPath } from "node:url";
 import { createBot, menuKeyboard, inlineKeyboard } from "@agntdev/bot-toolkit";
-import { createStore, newAlertRule, newPercentAlertRule, type AlertRule, type WatchlistEntry, type MorningSummary } from "./store.js";
+import { createStore, newAlertRule, newPercentAlertRule, type AlertRule, type WatchlistEntry, type MorningSummary, type PersistentStore } from "./store.js";
 import { fetchPrices, formatPriceDisplay } from "./price.js";
+import { startPoller } from "./poller.js";
 
 export interface Session {
   initializedAt: string;
@@ -655,8 +656,8 @@ function summaryStatusKeyboard(summary: MorningSummary | null) {
   ]);
 }
 
-export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
-  const store = createStore();
+export function makeBot(store?: PersistentStore, token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
+  const effectiveStore = store ?? createStore();
   const bot = createBot<Session>(token, {
     initial: () => ({ initializedAt: new Date(0).toISOString() }),
     onError: async (err) => {
@@ -694,7 +695,7 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
     clearWatchlistSession(ctx.session);
     let entries: WatchlistEntry[];
     try {
-      entries = await store.getWatchlist(ctx.chat!.id);
+      entries = await effectiveStore.getWatchlist(ctx.chat!.id);
     } catch {
       await ctx.reply("Something went wrong. Please try again or use /help for assistance.");
       return;
@@ -708,7 +709,7 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
     clearWatchlistSession(ctx.session);
     let rules: AlertRule[];
     try {
-      rules = await store.getAlertRules(ctx.chat!.id);
+      rules = await effectiveStore.getAlertRules(ctx.chat!.id);
     } catch {
       await ctx.reply("Something went wrong. Please try again or use /help for assistance.");
       return;
@@ -741,7 +742,7 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
 
     let entries: WatchlistEntry[];
     try {
-      entries = await store.getWatchlist(ctx.chat!.id);
+      entries = await effectiveStore.getWatchlist(ctx.chat!.id);
     } catch {
       await ctx.reply("Something went wrong. Please try again or use /help for assistance.");
       return;
@@ -769,7 +770,7 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
     clearSummarySession(ctx.session);
     let summary: MorningSummary | null;
     try {
-      summary = await store.getMorningSummary(ctx.chat!.id);
+      summary = await effectiveStore.getMorningSummary(ctx.chat!.id);
     } catch {
       await ctx.reply("Something went wrong. Please try again or use /help for assistance.");
       return;
@@ -804,7 +805,7 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
       ctx.session.quietHoursStart = undefined;
       ctx.session.quietHoursEnd = undefined;
       try {
-        await store.deleteQuietHours(ctx.chat!.id);
+        await effectiveStore.deleteQuietHours(ctx.chat!.id);
       } catch {
         // best-effort; if deletion fails, defaults still show correctly
       }
@@ -845,7 +846,7 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
       clearWatchlistSession(ctx.session);
       let entries: WatchlistEntry[];
       try {
-        entries = await store.getWatchlist(ctx.chat!.id);
+        entries = await effectiveStore.getWatchlist(ctx.chat!.id);
       } catch {
         await ctx.answerCallbackQuery({ text: "Failed to load watchlist." });
         return;
@@ -876,14 +877,14 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
       }
 
       try {
-        const already = await store.isInWatchlist(ctx.chat!.id, coin);
+        const already = await effectiveStore.isInWatchlist(ctx.chat!.id, coin);
         if (already) {
           await ctx.answerCallbackQuery();
           await ctx.editMessageText(watchlistDuplicateText(coin), { reply_markup: mainMenu() });
           clearWatchlistSession(ctx.session);
           return;
         }
-        await store.addToWatchlist(ctx.chat!.id, coin, coinId);
+        await effectiveStore.addToWatchlist(ctx.chat!.id, coin, coinId);
       } catch {
         await ctx.answerCallbackQuery({ text: "Failed to add coin. Please try again." });
         return;
@@ -912,7 +913,7 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
     if (data.startsWith("watchlist:remove:")) {
       const ticker = data.slice("watchlist:remove:".length);
       try {
-        await store.removeFromWatchlist(ctx.chat!.id, ticker);
+        await effectiveStore.removeFromWatchlist(ctx.chat!.id, ticker);
       } catch {
         await ctx.answerCallbackQuery({ text: "Failed to remove coin. Please try again." });
         return;
@@ -920,7 +921,7 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
       await ctx.answerCallbackQuery({ text: `${ticker} removed from watchlist.` });
       let entries: WatchlistEntry[];
       try {
-        entries = await store.getWatchlist(ctx.chat!.id);
+        entries = await effectiveStore.getWatchlist(ctx.chat!.id);
       } catch {
         await ctx.editMessageText("Something went wrong. Please try again.", { reply_markup: mainMenu() });
         return;
@@ -949,7 +950,7 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
       clearWatchlistSession(ctx.session);
       let rules: AlertRule[];
       try {
-        rules = await store.getAlertRules(ctx.chat!.id);
+        rules = await effectiveStore.getAlertRules(ctx.chat!.id);
       } catch {
         await ctx.answerCallbackQuery({ text: "Failed to load alerts." });
         return;
@@ -1094,7 +1095,7 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
       clearAlertManageSession(ctx.session);
       let rules: AlertRule[];
       try {
-        rules = await store.getAlertRules(ctx.chat!.id);
+        rules = await effectiveStore.getAlertRules(ctx.chat!.id);
       } catch {
         await ctx.answerCallbackQuery({ text: "Failed to load alerts." });
         await ctx.editMessageText(MAIN_MENU_TEXT, { reply_markup: mainMenu() });
@@ -1112,7 +1113,7 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
     if (data.startsWith("alerts:delete:confirm:")) {
       const ruleId = data.slice("alerts:delete:confirm:".length);
       try {
-        await store.deleteAlertRule(ctx.chat!.id, ruleId);
+        await effectiveStore.deleteAlertRule(ctx.chat!.id, ruleId);
       } catch {
         await ctx.answerCallbackQuery({ text: "Failed to delete alert." });
         return;
@@ -1120,7 +1121,7 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
       await ctx.answerCallbackQuery({ text: "Alert deleted." });
       let rules: AlertRule[];
       try {
-        rules = await store.getAlertRules(ctx.chat!.id);
+        rules = await effectiveStore.getAlertRules(ctx.chat!.id);
       } catch {
         await ctx.editMessageText("Something went wrong.", { reply_markup: mainMenu() });
         return;
@@ -1137,7 +1138,7 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
       const ruleId = data.slice("alerts:delete:".length);
       let rules: AlertRule[];
       try {
-        rules = await store.getAlertRules(ctx.chat!.id);
+        rules = await effectiveStore.getAlertRules(ctx.chat!.id);
       } catch {
         await ctx.answerCallbackQuery({ text: "Failed to load alert." });
         return;
@@ -1156,7 +1157,7 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
       clearAlertManageSession(ctx.session);
       let rules: AlertRule[];
       try {
-        rules = await store.getAlertRules(ctx.chat!.id);
+        rules = await effectiveStore.getAlertRules(ctx.chat!.id);
       } catch {
         await ctx.answerCallbackQuery({ text: "Failed to load alerts." });
         await ctx.editMessageText(MAIN_MENU_TEXT, { reply_markup: mainMenu() });
@@ -1181,7 +1182,7 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
       }
       let rules: AlertRule[];
       try {
-        rules = await store.getAlertRules(ctx.chat!.id);
+        rules = await effectiveStore.getAlertRules(ctx.chat!.id);
       } catch {
         clearAlertManageSession(ctx.session);
         await ctx.answerCallbackQuery({ text: "Failed to load alert." });
@@ -1206,7 +1207,7 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
       clearAlertManageSession(ctx.session);
       let rules: AlertRule[];
       try {
-        rules = await store.getAlertRules(ctx.chat!.id);
+        rules = await effectiveStore.getAlertRules(ctx.chat!.id);
       } catch {
         await ctx.answerCallbackQuery({ text: "Failed to load alert." });
         return;
@@ -1237,7 +1238,7 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
       clearWatchlistSession(ctx.session);
       let entries: WatchlistEntry[];
       try {
-        entries = await store.getWatchlist(ctx.chat!.id);
+        entries = await effectiveStore.getWatchlist(ctx.chat!.id);
       } catch {
         await ctx.answerCallbackQuery({ text: "Failed to load watchlist." });
         return;
@@ -1269,7 +1270,7 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
       clearSummarySession(ctx.session);
       let summary: MorningSummary | null;
       try {
-        summary = await store.getMorningSummary(ctx.chat!.id);
+        summary = await effectiveStore.getMorningSummary(ctx.chat!.id);
       } catch {
         await ctx.answerCallbackQuery({ text: "Failed to load settings." });
         return;
@@ -1303,7 +1304,7 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
       clearSummarySession(ctx.session);
       let summary: MorningSummary | null;
       try {
-        summary = await store.getMorningSummary(ctx.chat!.id);
+        summary = await effectiveStore.getMorningSummary(ctx.chat!.id);
       } catch {
         await ctx.answerCallbackQuery({ text: "Failed to load settings." });
         return;
@@ -1315,14 +1316,14 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
 
     if (data === "settings:summary:disable") {
       try {
-        await store.deleteMorningSummary(ctx.chat!.id);
+        await effectiveStore.deleteMorningSummary(ctx.chat!.id);
       } catch {
         await ctx.answerCallbackQuery({ text: "Failed to update settings." });
         return;
       }
       let summary: MorningSummary | null;
       try {
-        summary = await store.getMorningSummary(ctx.chat!.id);
+        summary = await effectiveStore.getMorningSummary(ctx.chat!.id);
       } catch {
         await ctx.answerCallbackQuery({ text: "Failed to load settings." });
         return;
@@ -1394,7 +1395,7 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
       ctx.session.quietHoursStep = undefined;
 
       try {
-        await store.setQuietHours(ctx.chat!.id, ctx.session.quietHoursStart!, parsed);
+        await effectiveStore.setQuietHours(ctx.chat!.id, ctx.session.quietHoursStart!, parsed);
       } catch {
         ctx.session.quietHoursStart = undefined;
         ctx.session.quietHoursEnd = undefined;
@@ -1429,13 +1430,13 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
       }
 
       try {
-        const already = await store.isInWatchlist(ctx.chat!.id, raw);
+        const already = await effectiveStore.isInWatchlist(ctx.chat!.id, raw);
         if (already) {
           await ctx.reply(watchlistDuplicateText(raw), { reply_markup: mainMenu() });
           clearWatchlistSession(ctx.session);
           return;
         }
-        await store.addToWatchlist(ctx.chat!.id, raw, coinId);
+        await effectiveStore.addToWatchlist(ctx.chat!.id, raw, coinId);
       } catch {
         await ctx.reply("Failed to add coin. Please try again later.", { reply_markup: mainMenu() });
         clearWatchlistSession(ctx.session);
@@ -1491,7 +1492,7 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
 
       const rule = newAlertRule(ctx.chat!.id, coin, direction, price);
       try {
-        await store.createAlertRule(rule);
+        await effectiveStore.createAlertRule(rule);
       } catch {
         await ctx.reply("Failed to save your alert. Please try again later.", { reply_markup: mainMenu() });
         clearAlertSession(ctx.session);
@@ -1594,7 +1595,7 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
 
       const rule = newPercentAlertRule(ctx.chat!.id, coin, percent, minutes);
       try {
-        await store.createAlertRule(rule);
+        await effectiveStore.createAlertRule(rule);
       } catch {
         await ctx.reply("Failed to save your alert. Please try again later.", { reply_markup: mainMenu() });
         clearAlertSession(ctx.session);
@@ -1619,7 +1620,7 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
       }
       let rules: AlertRule[];
       try {
-        rules = await store.getAlertRules(ctx.chat!.id);
+        rules = await effectiveStore.getAlertRules(ctx.chat!.id);
       } catch {
         clearAlertManageSession(ctx.session);
         await ctx.reply("Failed to load your alerts.", { reply_markup: mainMenu() });
@@ -1633,7 +1634,7 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
       }
       const updated: AlertRule = { ...rule, price };
       try {
-        await store.createAlertRule(updated);
+        await effectiveStore.createAlertRule(updated);
       } catch {
         await ctx.reply("Failed to update alert.", { reply_markup: mainMenu() });
         clearAlertManageSession(ctx.session);
@@ -1653,7 +1654,7 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
       }
       let rules: AlertRule[];
       try {
-        rules = await store.getAlertRules(ctx.chat!.id);
+        rules = await effectiveStore.getAlertRules(ctx.chat!.id);
       } catch {
         clearAlertManageSession(ctx.session);
         await ctx.reply("Failed to load your alerts.", { reply_markup: mainMenu() });
@@ -1702,7 +1703,7 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
 
       let rules: AlertRule[];
       try {
-        rules = await store.getAlertRules(ctx.chat!.id);
+        rules = await effectiveStore.getAlertRules(ctx.chat!.id);
       } catch {
         clearAlertManageSession(ctx.session);
         await ctx.reply("Failed to load your alerts.", { reply_markup: mainMenu() });
@@ -1716,7 +1717,7 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
       }
       const updated: AlertRule = { ...rule, percent: ctx.session.tempEditPercent, timeframeMinutes: minutes };
       try {
-        await store.createAlertRule(updated);
+        await effectiveStore.createAlertRule(updated);
       } catch {
         await ctx.reply("Failed to update alert.", { reply_markup: mainMenu() });
         clearAlertManageSession(ctx.session);
@@ -1742,7 +1743,7 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
         return;
       }
       try {
-        await store.setMorningSummary(ctx.chat!.id, parsed);
+        await effectiveStore.setMorningSummary(ctx.chat!.id, parsed);
       } catch {
         await ctx.reply("Failed to save summary time. Please try again later.", { reply_markup: mainMenu() });
         clearSummarySession(ctx.session);
@@ -1751,7 +1752,7 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
       clearSummarySession(ctx.session);
       let summary: MorningSummary | null;
       try {
-        summary = await store.getMorningSummary(ctx.chat!.id);
+        summary = await effectiveStore.getMorningSummary(ctx.chat!.id);
       } catch {
         await ctx.reply("Morning summary is now on at " + parsed + ".", { reply_markup: mainMenu() });
         return;
@@ -1778,7 +1779,9 @@ async function main() {
     process.exit(1);
   }
 
-  const bot = makeBot(token);
+  const store = createStore();
+  const bot = makeBot(store, token);
+  startPoller(store);
   await bot.start();
 }
 
