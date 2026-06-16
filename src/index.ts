@@ -1798,7 +1798,7 @@ async function main() {
 
   const store = createStore();
   const bot = makeBot(store, token);
-  startPoller(store);
+  startPoller(store, (chatId, text) => bot.api.sendMessage(chatId, text));
   await bot.start();
 }
 
