@@ -1,6 +1,6 @@
 import type { PersistentStore } from "./store.js";
 import { fetchPrices } from "./price.js";
-import { evaluateAlertRules } from "./evaluator.js";
+import { evaluateAlertRules, DEFAULT_COOLDOWN_MS } from "./evaluator.js";
 
 const POLL_INTERVAL_MS = 60_000;
 
@@ -30,6 +30,7 @@ export function startPoller(store: PersistentStore): () => void {
           `new=$${alert.newPrice.toFixed(2)}`,
           `pct=${alert.pctChange.toFixed(2)}%`,
         );
+        await store.recordSentAlert(alert.rule.userId, alert.rule.id, DEFAULT_COOLDOWN_MS);
       }
 
       const now = Date.now();

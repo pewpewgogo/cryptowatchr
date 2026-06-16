@@ -787,6 +787,11 @@ export function makeBot(store?: PersistentStore, token = process.env.BOT_TOKEN ?
       const tz = data.slice("onboard:tz:".length);
       ctx.session.timezone = tz;
       ctx.session.onboardingStep = "confirm";
+      try {
+        await effectiveStore.setTimezone(ctx.chat!.id, tz);
+      } catch {
+        // best-effort persist; session still has the value
+      }
       await ctx.answerCallbackQuery();
       await ctx.editMessageText(confirmText(tz, undefined, ctx.session.quietHoursStart, ctx.session.quietHoursEnd), { reply_markup: confirmKeyboard() });
       return;
@@ -820,6 +825,11 @@ export function makeBot(store?: PersistentStore, token = process.env.BOT_TOKEN ?
     if (data === "onboard:skip") {
       ctx.session.onboardingStep = undefined;
       ctx.session.timezone = detectTimezone(ctx.from?.language_code);
+      try {
+        await effectiveStore.setTimezone(ctx.chat!.id, ctx.session.timezone);
+      } catch {
+        // best-effort
+      }
       await ctx.answerCallbackQuery();
       await ctx.editMessageText(MAIN_MENU_TEXT, { reply_markup: mainMenu() });
       return;
@@ -1359,6 +1369,11 @@ export function makeBot(store?: PersistentStore, token = process.env.BOT_TOKEN ?
       if (tz) {
         ctx.session.timezone = tz;
         ctx.session.onboardingStep = "confirm";
+        try {
+          await effectiveStore.setTimezone(ctx.chat!.id, tz);
+        } catch {
+          // best-effort
+        }
         await ctx.reply(confirmText(tz, undefined, ctx.session.quietHoursStart, ctx.session.quietHoursEnd), { reply_markup: confirmKeyboard() });
       }
       return;

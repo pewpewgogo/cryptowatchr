@@ -56,6 +56,10 @@ export interface PersistentStore {
   getAllTrackedCoinIds(): Promise<string[]>;
   savePriceSnapshot(snapshot: PriceSnapshot): Promise<void>;
   getLatestPriceSnapshot(coinId: string): Promise<PriceSnapshot | null>;
+  recordSentAlert(userId: number, ruleId: string, cooldownMs: number): Promise<void>;
+  isAlertSuppressed(userId: number, ruleId: string): Promise<boolean>;
+  setTimezone(userId: number, timezone: string): Promise<void>;
+  getTimezone(userId: number): Promise<string | null>;
 }
 
 function createRedisClient(url: string) {
@@ -180,6 +184,27 @@ class RedisStore implements PersistentStore {
     return JSON.parse(raw) as PriceSnapshot;
   }
 
+  async recordSentAlert(userId: number, ruleId: string, cooldownMs: number): Promise<void> {
+    const key = `${PREFIX}sent_alert:${userId}:${ruleId}`;
+    await this.#client.set(key, String(Date.now()), "PX", cooldownMs);
+  }
+
+  async isAlertSuppressed(userId: number, ruleId: string): Promise<boolean> {
+    const key = `${PREFIX}sent_alert:${userId}:${ruleId}`;
+    const exists = await this.#client.exists(key);
+    return exists === 1;
+  }
+
+  async setTimezone(userId: number, timezone: string): Promise<void> {
+    const key = `${PREFIX}timezone:${userId}`;
+    await this.#client.set(key, timezone);
+  }
+
+  async getTimezone(userId: number): Promise<string | null> {
+    const key = `${PREFIX}timezone:${userId}`;
+    return await this.#client.get(key);
+  }
+
   async addToWatchlist(userId: number, ticker: string, coinId: string): Promise<void> {
     const entry: WatchlistEntry = { userId, ticker, coinId, addedAt: new Date().toISOString() };
     await this.#client.hset(WATCHLIST_KEY(userId), ticker, JSON.stringify(entry));
@@ -275,6 +300,34 @@ class MemoryStore implements PersistentStore {
 
   async getLatestPriceSnapshot(coinId: string): Promise<PriceSnapshot | null> {
     return this.#snapshots.get(coinId) ?? null;
+  }
+
+  #sentAlerts = new Map<string, number>();
+
+  async recordSentAlert(userId: number, ruleId: string, cooldownMs: number): Promise<void> {
+    const key = `${userId}:${ruleId}`;
+    this.#sentAlerts.set(key, Date.now() + cooldownMs);
+  }
+
+  async isAlertSuppressed(userId: number, ruleId: string): Promise<boolean> {
+    const key = `${userId}:${ruleId}`;
+    const expiresAt = this.#sentAlerts.get(key);
+    if (!expiresAt) return false;
+    if (Date.now() > expiresAt) {
+      this.#sentAlerts.delete(key);
+      return false;
+    }
+    return true;
+  }
+
+  #timezones = new Map<number, string>();
+
+  async setTimezone(userId: number, timezone: string): Promise<void> {
+    this.#timezones.set(userId, timezone);
+  }
+
+  async getTimezone(userId: number): Promise<string | null> {
+    return this.#timezones.get(userId) ?? null;
   }
 
   async addToWatchlist(userId: number, ticker: string, coinId: string): Promise<void> {
