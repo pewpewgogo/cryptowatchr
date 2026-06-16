@@ -8,7 +8,7 @@
           {
             "method": "sendMessage",
             "payload": {
-              "text": "*CryptoWatchr Help*\n\nAvailable commands:\n/start \u2014 Set up your CryptoWatchr profile and open the main menu\n/help \u2014 Show this help message\n\nYou can also use the menu buttons below to manage your watchlist, create alerts, check prices, and configure settings.",
+              "text": "*CryptoWatchr Help*\n\nAvailable commands:\n/start \u2014 Set up your CryptoWatchr profile and open the main menu\n/help \u2014 Show this help message\n/list \u2014 View your watchlist and manage tracked coins\n\nYou can also use the menu buttons below to manage your watchlist, create alerts, check prices, and configure settings.",
               "parse_mode": "Markdown",
               "reply_markup": {
                 "inline_keyboard": [

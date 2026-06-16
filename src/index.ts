@@ -264,12 +264,12 @@ const HELP_TEXT = [
   "Available commands:",
   "/start — Set up your CryptoWatchr profile and open the main menu",
   "/help — Show this help message",
+  "/list — View your watchlist and manage tracked coins",
   "",
   "You can also use the menu buttons below to manage your watchlist, create alerts, check prices, and configure settings.",
 ].join("\n");
 
 const MENU_RESPONSES: Record<string, string> = {
-  "menu:watchlist": "My Watchlist will show your tracked coins and remove buttons.",
   "menu:price": "Price Check will show current prices for one coin or your full watchlist.",
   "menu:settings": "Settings will manage timezone, quiet hours, cooldown, and morning summaries.",
   "menu:help": "Help will list commands and explain how CryptoWatchr alerts work.",
@@ -312,6 +312,26 @@ function unknownTickerText(input: string, suggestions: string[]) {
   }
   lines.push("", "Please try again with a valid ticker, or pick from the preset coins.");
   return lines.join("\n");
+}
+
+const EMPTY_WATCHLIST_TEXT = "Your watchlist is empty.\n\nUse the Add Coin menu or type a ticker to start building your watchlist.";
+
+function myWatchlistText(entries: WatchlistEntry[]) {
+  if (entries.length === 0) return EMPTY_WATCHLIST_TEXT;
+  const lines = ["Your watchlist:"];
+  for (const e of entries) {
+    lines.push(`\u2022 ${e.ticker}`);
+  }
+  lines.push("", "Tap Remove to take a coin off your list.");
+  return lines.join("\n");
+}
+
+function myWatchlistKeyboard(entries: WatchlistEntry[]) {
+  const rows = entries.map((e) => [
+    { text: `Remove ${e.ticker}`, callback_data: `watchlist:remove:${e.ticker}` },
+  ]);
+  rows.push([{ text: "Back to menu", callback_data: "menu:back" }]);
+  return inlineKeyboard(rows);
 }
 
 function clearWatchlistSession(session: Session) {
@@ -502,6 +522,19 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
     await ctx.reply(HELP_TEXT, { parse_mode: "Markdown", reply_markup: mainMenu() });
   });
 
+  bot.command("list", async (ctx) => {
+    clearAlertSession(ctx.session);
+    clearWatchlistSession(ctx.session);
+    let entries: WatchlistEntry[];
+    try {
+      entries = await store.getWatchlist(ctx.chat!.id);
+    } catch {
+      await ctx.reply("Something went wrong. Please try again or use /help for assistance.");
+      return;
+    }
+    await ctx.reply(myWatchlistText(entries), { reply_markup: entries.length > 0 ? myWatchlistKeyboard(entries) : mainMenu() });
+  });
+
   bot.on("callback_query:data", async (ctx) => {
     const data = ctx.callbackQuery.data;
 
@@ -565,6 +598,25 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
       return;
     }
 
+    if (data === "menu:watchlist") {
+      clearAlertSession(ctx.session);
+      clearWatchlistSession(ctx.session);
+      let entries: WatchlistEntry[];
+      try {
+        entries = await store.getWatchlist(ctx.chat!.id);
+      } catch {
+        await ctx.answerCallbackQuery({ text: "Failed to load watchlist." });
+        return;
+      }
+      await ctx.answerCallbackQuery();
+      if (entries.length === 0) {
+        await ctx.editMessageText(EMPTY_WATCHLIST_TEXT, { reply_markup: mainMenu() });
+      } else {
+        await ctx.editMessageText(myWatchlistText(entries), { reply_markup: myWatchlistKeyboard(entries) });
+      }
+      return;
+    }
+
     if (data.startsWith("watchlist:coin:")) {
       const coin = data.slice("watchlist:coin:".length);
 
@@ -612,6 +664,30 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
       ctx.session.watchlistStep = "coin";
       await ctx.answerCallbackQuery();
       await ctx.editMessageText(ADD_COIN_TEXT, { reply_markup: watchlistCoinKeyboard() });
+      return;
+    }
+
+    if (data.startsWith("watchlist:remove:")) {
+      const ticker = data.slice("watchlist:remove:".length);
+      try {
+        await store.removeFromWatchlist(ctx.chat!.id, ticker);
+      } catch {
+        await ctx.answerCallbackQuery({ text: "Failed to remove coin. Please try again." });
+        return;
+      }
+      await ctx.answerCallbackQuery({ text: `${ticker} removed from watchlist.` });
+      let entries: WatchlistEntry[];
+      try {
+        entries = await store.getWatchlist(ctx.chat!.id);
+      } catch {
+        await ctx.editMessageText("Something went wrong. Please try again.", { reply_markup: mainMenu() });
+        return;
+      }
+      if (entries.length === 0) {
+        await ctx.editMessageText(EMPTY_WATCHLIST_TEXT, { reply_markup: mainMenu() });
+      } else {
+        await ctx.editMessageText(myWatchlistText(entries), { reply_markup: myWatchlistKeyboard(entries) });
+      }
       return;
     }
 
