@@ -41,6 +41,7 @@ export interface PriceSnapshot {
 export interface PersistentStore {
   createAlertRule(rule: AlertRule): Promise<void>;
   getAlertRules(userId: number): Promise<AlertRule[]>;
+  getAllAlertRules(): Promise<AlertRule[]>;
   deleteAlertRule(userId: number, ruleId: string): Promise<void>;
   getQuietHours(userId: number): Promise<QuietHours | null>;
   setQuietHours(userId: number, start: string, end: string): Promise<void>;
@@ -89,6 +90,23 @@ class RedisStore implements PersistentStore {
     return results
       .filter((r): r is string => r !== null)
       .map((r) => JSON.parse(r) as AlertRule);
+  }
+
+  async getAllAlertRules(): Promise<AlertRule[]> {
+    const rules: AlertRule[] = [];
+    let cursor = "0";
+    do {
+      const [nextCursor, keys] = await this.#client.scan(cursor, "MATCH", `${PREFIX}alert:*:*`, "COUNT", 100);
+      cursor = nextCursor;
+      for (const key of keys) {
+        if (key.includes(":rules:")) continue;
+        const raw = await this.#client.get(key);
+        if (raw) {
+          rules.push(JSON.parse(raw) as AlertRule);
+        }
+      }
+    } while (cursor !== "0");
+    return rules;
   }
 
   async deleteAlertRule(userId: number, ruleId: string): Promise<void> {
@@ -204,6 +222,10 @@ class MemoryStore implements PersistentStore {
     const ids = this.#userRules.get(userId);
     if (!ids) return [];
     return [...ids].map((id) => this.#rules.get(id)!).filter(Boolean);
+  }
+
+  async getAllAlertRules(): Promise<AlertRule[]> {
+    return [...this.#rules.values()];
   }
 
   async deleteAlertRule(userId: number, ruleId: string): Promise<void> {

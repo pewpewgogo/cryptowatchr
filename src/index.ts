@@ -225,6 +225,8 @@ function coinIdForTicker(ticker: string): string | null {
   return KNOWN_COINS[ticker.toUpperCase()] ?? null;
 }
 
+export { coinIdForTicker, KNOWN_COINS };
+
 function detectTimezone(languageCode?: string): string {
   if (languageCode) {
     const tz = LANGUAGE_TO_TZ[languageCode] ?? LANGUAGE_TO_TZ[languageCode.split("-")[0]];

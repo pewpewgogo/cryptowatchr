@@ -1,5 +1,6 @@
 import type { PersistentStore } from "./store.js";
 import { fetchPrices } from "./price.js";
+import { evaluateAlertRules } from "./evaluator.js";
 
 const POLL_INTERVAL_MS = 60_000;
 
@@ -17,6 +18,20 @@ export function startPoller(store: PersistentStore): () => void {
       }
 
       const data = await fetchPrices(coinIds);
+
+      const triggered = await evaluateAlertRules(store, data);
+      for (const alert of triggered) {
+        console.info(
+          "[CryptoWatchr] alert triggered:",
+          `user=${alert.rule.userId}`,
+          `coin=${alert.coinId}`,
+          `type=${alert.rule.type}`,
+          `old=$${alert.oldPrice.toFixed(2)}`,
+          `new=$${alert.newPrice.toFixed(2)}`,
+          `pct=${alert.pctChange.toFixed(2)}%`,
+        );
+      }
+
       const now = Date.now();
 
       for (const coinId of coinIds) {
