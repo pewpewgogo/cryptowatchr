@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { createBot, menuKeyboard, inlineKeyboard } from "@agntdev/bot-toolkit";
 import { createStore, newAlertRule, newPercentAlertRule, type AlertRule, type WatchlistEntry } from "./store.js";
+import { fetchPrices, formatPriceDisplay } from "./price.js";
 
 export interface Session {
   initializedAt: string;
@@ -269,12 +270,12 @@ const HELP_TEXT = [
   "/help — Show this help message",
   "/list — View your watchlist and manage tracked coins",
   "/alerts — View and manage your price alerts",
+  "/price — Check current prices for a coin or your full watchlist",
   "",
   "You can also use the menu buttons below to manage your watchlist, create alerts, check prices, and configure settings.",
 ].join("\n");
 
 const MENU_RESPONSES: Record<string, string> = {
-  "menu:price": "Price Check will show current prices for one coin or your full watchlist.",
   "menu:settings": "Settings will manage timezone, quiet hours, cooldown, and morning summaries.",
   "menu:help": "Help will list commands and explain how CryptoWatchr alerts work.",
 };
@@ -649,6 +650,52 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
       return;
     }
     await ctx.reply(myAlertsText(rules), { reply_markup: rules.length > 0 ? myAlertsKeyboard(rules) : mainMenu() });
+  });
+
+  bot.command("price", async (ctx) => {
+    clearAlertSession(ctx.session);
+    clearAlertManageSession(ctx.session);
+    clearWatchlistSession(ctx.session);
+
+    const raw = ctx.match?.trim();
+    if (raw) {
+      const ticker = raw.toUpperCase();
+      const coinId = coinIdForTicker(ticker);
+      if (!coinId) {
+        await ctx.reply(`"${ticker}" is not a recognized ticker. Try a known ticker like BTC, ETH, or SOL.`, { reply_markup: mainMenu() });
+        return;
+      }
+      try {
+        const data = await fetchPrices([coinId]);
+        const text = formatPriceDisplay(data, [{ ticker, coinId }]);
+        await ctx.reply(text, { reply_markup: mainMenu() });
+      } catch {
+        await ctx.reply("Unable to fetch price data right now. Please try again later.", { reply_markup: mainMenu() });
+      }
+      return;
+    }
+
+    let entries: WatchlistEntry[];
+    try {
+      entries = await store.getWatchlist(ctx.chat!.id);
+    } catch {
+      await ctx.reply("Something went wrong. Please try again or use /help for assistance.");
+      return;
+    }
+
+    if (entries.length === 0) {
+      await ctx.reply(EMPTY_WATCHLIST_TEXT, { reply_markup: mainMenu() });
+      return;
+    }
+
+    try {
+      const coinIds = [...new Set(entries.map((e) => e.coinId))];
+      const data = await fetchPrices(coinIds);
+      const text = formatPriceDisplay(data, entries.map((e) => ({ ticker: e.ticker, coinId: e.coinId })));
+      await ctx.reply(text, { reply_markup: mainMenu() });
+    } catch {
+      await ctx.reply("Unable to fetch price data right now. Please try again later.", { reply_markup: mainMenu() });
+    }
   });
 
   bot.on("callback_query:data", async (ctx) => {
@@ -1103,6 +1150,35 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
     }
 
     // --- End alert management callbacks ---
+
+    if (data === "menu:price") {
+      clearAlertSession(ctx.session);
+      clearAlertManageSession(ctx.session);
+      clearWatchlistSession(ctx.session);
+      let entries: WatchlistEntry[];
+      try {
+        entries = await store.getWatchlist(ctx.chat!.id);
+      } catch {
+        await ctx.answerCallbackQuery({ text: "Failed to load watchlist." });
+        return;
+      }
+      if (entries.length === 0) {
+        await ctx.answerCallbackQuery();
+        await ctx.editMessageText(EMPTY_WATCHLIST_TEXT, { reply_markup: mainMenu() });
+        return;
+      }
+      try {
+        const coinIds = [...new Set(entries.map((e) => e.coinId))];
+        const data = await fetchPrices(coinIds);
+        const text = formatPriceDisplay(data, entries.map((e) => ({ ticker: e.ticker, coinId: e.coinId })));
+        await ctx.answerCallbackQuery();
+        await ctx.editMessageText(text, { reply_markup: mainMenu() });
+      } catch {
+        await ctx.answerCallbackQuery({ text: "Unable to fetch prices." });
+        await ctx.editMessageText("Unable to fetch price data right now. Please try again later.", { reply_markup: mainMenu() });
+      }
+      return;
+    }
 
     const response = MENU_RESPONSES[data];
 
