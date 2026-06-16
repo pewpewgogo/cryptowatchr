@@ -13,10 +13,18 @@ export interface AlertRule {
   createdAt: string;
 }
 
+export interface QuietHours {
+  start: string;
+  end: string;
+}
+
 export interface PersistentStore {
   createAlertRule(rule: AlertRule): Promise<void>;
   getAlertRules(userId: number): Promise<AlertRule[]>;
   deleteAlertRule(userId: number, ruleId: string): Promise<void>;
+  getQuietHours(userId: number): Promise<QuietHours | null>;
+  setQuietHours(userId: number, start: string, end: string): Promise<void>;
+  deleteQuietHours(userId: number): Promise<void>;
 }
 
 function createRedisClient(url: string) {
@@ -57,11 +65,29 @@ class RedisStore implements PersistentStore {
     await this.#client.del(key);
     await this.#client.srem(RULES_KEY(userId), ruleId);
   }
+
+  async getQuietHours(userId: number): Promise<QuietHours | null> {
+    const key = `${PREFIX}quiet_hours:${userId}`;
+    const raw = await this.#client.get(key);
+    if (!raw) return null;
+    return JSON.parse(raw) as QuietHours;
+  }
+
+  async setQuietHours(userId: number, start: string, end: string): Promise<void> {
+    const key = `${PREFIX}quiet_hours:${userId}`;
+    await this.#client.set(key, JSON.stringify({ start, end }));
+  }
+
+  async deleteQuietHours(userId: number): Promise<void> {
+    const key = `${PREFIX}quiet_hours:${userId}`;
+    await this.#client.del(key);
+  }
 }
 
 class MemoryStore implements PersistentStore {
   #rules = new Map<string, AlertRule>();
   #userRules = new Map<number, Set<string>>();
+  #quietHours = new Map<number, QuietHours>();
 
   async createAlertRule(rule: AlertRule): Promise<void> {
     this.#rules.set(rule.id, rule);
@@ -82,6 +108,18 @@ class MemoryStore implements PersistentStore {
   async deleteAlertRule(userId: number, ruleId: string): Promise<void> {
     this.#rules.delete(ruleId);
     this.#userRules.get(userId)?.delete(ruleId);
+  }
+
+  async getQuietHours(userId: number): Promise<QuietHours | null> {
+    return this.#quietHours.get(userId) ?? null;
+  }
+
+  async setQuietHours(userId: number, start: string, end: string): Promise<void> {
+    this.#quietHours.set(userId, { start, end });
+  }
+
+  async deleteQuietHours(userId: number): Promise<void> {
+    this.#quietHours.delete(userId);
   }
 }
 

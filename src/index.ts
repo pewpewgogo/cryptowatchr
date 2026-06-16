@@ -6,6 +6,9 @@ export interface Session {
   initializedAt: string;
   onboardingStep?: "timezone" | "confirm";
   timezone?: string;
+  quietHoursStep?: "start" | "end";
+  quietHoursStart?: string;
+  quietHoursEnd?: string;
   alertStep?: "type" | "coin" | "direction" | "price" | "pctCoin" | "pctPercent" | "pctTimeframe";
   alertCoin?: string;
   alertDirection?: "above" | "below";
@@ -71,12 +74,25 @@ function detectTimezone(languageCode?: string): string {
   return "UTC+0";
 }
 
-function confirmText(tz: string, detected?: boolean) {
+function parseTime(input: string): string | null {
+  const m = input.match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  const hours = Number(m[1]);
+  const minutes = Number(m[2]);
+  if (hours < 0 || hours > 23) return null;
+  if (minutes < 0 || minutes > 59) return null;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
+
+function confirmText(tz: string, detected?: boolean, quietStart?: string, quietEnd?: string) {
+  const hasCustom = quietStart !== undefined || quietEnd !== undefined;
+  const start = quietStart ?? DEFAULT_QUIET_START;
+  const end = quietEnd ?? DEFAULT_QUIET_END;
   return [
     `Timezone set to ${tz}.${detected ? " (Auto-detected from your language settings.)" : ""}`,
     "",
-    "Your default settings:",
-    `\u2022 Quiet hours: ${DEFAULT_QUIET_START}\u2013${DEFAULT_QUIET_END} (alerts suppressed while you sleep)`,
+    hasCustom ? "Your settings:" : "Your default settings:",
+    `\u2022 Quiet hours: ${start}\u2013${end} (alerts suppressed while you sleep)`,
     `\u2022 Alert cooldown: ${DEFAULT_COOLDOWN_HOURS} hour (no repeat alerts for the same rule)`,
     "",
     "You can change these anytime in Settings.",
@@ -140,6 +156,7 @@ function timezoneKeyboard() {
 
 function confirmKeyboard() {
   return inlineKeyboard([
+    [{ text: "Set Quiet Hours", callback_data: "onboard:qhours" }],
     [{ text: "Continue to menu", callback_data: "onboard:done" }],
   ]);
 }
@@ -295,6 +312,31 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
       const tz = data.slice("onboard:tz:".length);
       ctx.session.timezone = tz;
       ctx.session.onboardingStep = "confirm";
+      await ctx.answerCallbackQuery();
+      await ctx.editMessageText(confirmText(tz, undefined, ctx.session.quietHoursStart, ctx.session.quietHoursEnd), { reply_markup: confirmKeyboard() });
+      return;
+    }
+
+    if (data === "onboard:qhours") {
+      ctx.session.quietHoursStep = "start";
+      await ctx.answerCallbackQuery();
+      await ctx.editMessageText(
+        "Set your quiet hours.\n\nWhat time should your quiet hours start? (HH:MM, 24-hour format)\n\nExample: 22:00",
+        { reply_markup: inlineKeyboard([[{ text: "Keep defaults", callback_data: "onboard:qhours:skip" }]]) },
+      );
+      return;
+    }
+
+    if (data === "onboard:qhours:skip") {
+      ctx.session.quietHoursStep = undefined;
+      ctx.session.quietHoursStart = undefined;
+      ctx.session.quietHoursEnd = undefined;
+      try {
+        await store.deleteQuietHours(ctx.chat!.id);
+      } catch {
+        // best-effort; if deletion fails, defaults still show correctly
+      }
+      const tz = ctx.session.timezone ?? detectTimezone(ctx.from?.language_code);
       await ctx.answerCallbackQuery();
       await ctx.editMessageText(confirmText(tz), { reply_markup: confirmKeyboard() });
       return;
@@ -469,8 +511,55 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
       if (tz) {
         ctx.session.timezone = tz;
         ctx.session.onboardingStep = "confirm";
-        await ctx.reply(confirmText(tz), { reply_markup: confirmKeyboard() });
+        await ctx.reply(confirmText(tz, undefined, ctx.session.quietHoursStart, ctx.session.quietHoursEnd), { reply_markup: confirmKeyboard() });
       }
+      return;
+    }
+
+    if (ctx.session.quietHoursStep === "start") {
+      const raw = ctx.message?.text?.trim();
+      const parsed = parseTime(raw ?? "");
+      if (!parsed) {
+        await ctx.reply(
+          "Please enter a valid time in HH:MM format (e.g. 22:00).",
+          { reply_markup: inlineKeyboard([[{ text: "Keep defaults", callback_data: "onboard:qhours:skip" }]]) },
+        );
+        return;
+      }
+      ctx.session.quietHoursStart = parsed;
+      ctx.session.quietHoursStep = "end";
+      await ctx.reply(
+        "What time should your quiet hours end? (HH:MM, 24-hour format)\n\nExample: 07:00",
+        { reply_markup: inlineKeyboard([[{ text: "Keep defaults", callback_data: "onboard:qhours:skip" }]]) },
+      );
+      return;
+    }
+
+    if (ctx.session.quietHoursStep === "end") {
+      const raw = ctx.message?.text?.trim();
+      const parsed = parseTime(raw ?? "");
+      if (!parsed) {
+        await ctx.reply(
+          "Please enter a valid time in HH:MM format (e.g. 07:00).",
+          { reply_markup: inlineKeyboard([[{ text: "Keep defaults", callback_data: "onboard:qhours:skip" }]]) },
+        );
+        return;
+      }
+      ctx.session.quietHoursEnd = parsed;
+      ctx.session.quietHoursStep = undefined;
+
+      try {
+        await store.setQuietHours(ctx.chat!.id, ctx.session.quietHoursStart!, parsed);
+      } catch {
+        ctx.session.quietHoursStart = undefined;
+        ctx.session.quietHoursEnd = undefined;
+      }
+
+      const tz = ctx.session.timezone ?? detectTimezone(ctx.from?.language_code);
+      await ctx.reply(
+        confirmText(tz, undefined, ctx.session.quietHoursStart, ctx.session.quietHoursEnd),
+        { reply_markup: confirmKeyboard() },
+      );
       return;
     }
 

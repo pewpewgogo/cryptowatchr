@@ -1,0 +1,165 @@
+[
+  {
+    "name": "setting custom quiet hours during onboarding",
+    "steps": [
+      {
+        "send": { "text": "/start" },
+        "expect": [
+          { "method": "sendMessage" }
+        ]
+      },
+      {
+        "send": { "callback": "onboard:tz:UTC+3", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          {
+            "method": "editMessageText",
+            "payload": {
+              "text": "Timezone set to UTC+3.\n\nYour default settings:\n\u2022 Quiet hours: 22:00\u201307:00 (alerts suppressed while you sleep)\n\u2022 Alert cooldown: 1 hour (no repeat alerts for the same rule)\n\nYou can change these anytime in Settings.",
+              "reply_markup": {
+                "inline_keyboard": [
+                  [{ "text": "Set Quiet Hours", "callback_data": "onboard:qhours" }],
+                  [{ "text": "Continue to menu", "callback_data": "onboard:done" }]
+                ]
+              }
+            }
+          }
+        ]
+      },
+      {
+        "send": { "callback": "onboard:qhours", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          {
+            "method": "editMessageText",
+            "payload": {
+              "text": "Set your quiet hours.\n\nWhat time should your quiet hours start? (HH:MM, 24-hour format)\n\nExample: 22:00",
+              "reply_markup": {
+                "inline_keyboard": [
+                  [{ "text": "Keep defaults", "callback_data": "onboard:qhours:skip" }]
+                ]
+              }
+            }
+          }
+        ]
+      },
+      {
+        "send": { "text": "23:00" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "What time should your quiet hours end? (HH:MM, 24-hour format)\n\nExample: 07:00",
+              "reply_markup": {
+                "inline_keyboard": [
+                  [{ "text": "Keep defaults", "callback_data": "onboard:qhours:skip" }]
+                ]
+              }
+            }
+          }
+        ]
+      },
+      {
+        "send": { "text": "06:00" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "Timezone set to UTC+3.\n\nYour settings:\n\u2022 Quiet hours: 23:00\u201306:00 (alerts suppressed while you sleep)\n\u2022 Alert cooldown: 1 hour (no repeat alerts for the same rule)\n\nYou can change these anytime in Settings.",
+              "reply_markup": {
+                "inline_keyboard": [
+                  [{ "text": "Set Quiet Hours", "callback_data": "onboard:qhours" }],
+                  [{ "text": "Continue to menu", "callback_data": "onboard:done" }]
+                ]
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "keeping default quiet hours by skipping setup",
+    "steps": [
+      {
+        "send": { "text": "/start" },
+        "expect": [
+          { "method": "sendMessage" }
+        ]
+      },
+      {
+        "send": { "callback": "onboard:tz:UTC+3", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "onboard:qhours", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "onboard:qhours:skip", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          {
+            "method": "editMessageText",
+            "payload": {
+              "text": "Timezone set to UTC+3.\n\nYour default settings:\n\u2022 Quiet hours: 22:00\u201307:00 (alerts suppressed while you sleep)\n\u2022 Alert cooldown: 1 hour (no repeat alerts for the same rule)\n\nYou can change these anytime in Settings.",
+              "reply_markup": {
+                "inline_keyboard": [
+                  [{ "text": "Set Quiet Hours", "callback_data": "onboard:qhours" }],
+                  [{ "text": "Continue to menu", "callback_data": "onboard:done" }]
+                ]
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "invalid time input shows error during quiet hours setup",
+    "steps": [
+      {
+        "send": { "text": "/start" },
+        "expect": [
+          { "method": "sendMessage" }
+        ]
+      },
+      {
+        "send": { "callback": "onboard:tz:UTC+3", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "onboard:qhours", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "text": "abc" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "Please enter a valid time in HH:MM format (e.g. 22:00).",
+              "reply_markup": {
+                "inline_keyboard": [
+                  [{ "text": "Keep defaults", "callback_data": "onboard:qhours:skip" }]
+                ]
+              }
+            }
+          }
+        ]
+      }
+    ]
+  }
+]
