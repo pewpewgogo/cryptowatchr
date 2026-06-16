@@ -13,6 +13,13 @@ export interface AlertRule {
   createdAt: string;
 }
 
+export interface WatchlistEntry {
+  userId: number;
+  ticker: string;
+  coinId: string;
+  addedAt: string;
+}
+
 export interface QuietHours {
   start: string;
   end: string;
@@ -25,6 +32,10 @@ export interface PersistentStore {
   getQuietHours(userId: number): Promise<QuietHours | null>;
   setQuietHours(userId: number, start: string, end: string): Promise<void>;
   deleteQuietHours(userId: number): Promise<void>;
+  addToWatchlist(userId: number, ticker: string, coinId: string): Promise<void>;
+  getWatchlist(userId: number): Promise<WatchlistEntry[]>;
+  removeFromWatchlist(userId: number, ticker: string): Promise<void>;
+  isInWatchlist(userId: number, ticker: string): Promise<boolean>;
 }
 
 function createRedisClient(url: string) {
@@ -36,6 +47,7 @@ function createRedisClient(url: string) {
 
 const PREFIX = "cryptowatchr:";
 const RULES_KEY = (userId: number) => `${PREFIX}alert:rules:${userId}`;
+const WATCHLIST_KEY = (userId: number) => `${PREFIX}watchlist:${userId}`;
 
 class RedisStore implements PersistentStore {
   #client: ReturnType<typeof createRedisClient>;
@@ -82,12 +94,33 @@ class RedisStore implements PersistentStore {
     const key = `${PREFIX}quiet_hours:${userId}`;
     await this.#client.del(key);
   }
+
+  async addToWatchlist(userId: number, ticker: string, coinId: string): Promise<void> {
+    const entry: WatchlistEntry = { userId, ticker, coinId, addedAt: new Date().toISOString() };
+    await this.#client.hset(WATCHLIST_KEY(userId), ticker, JSON.stringify(entry));
+  }
+
+  async getWatchlist(userId: number): Promise<WatchlistEntry[]> {
+    const raw = await this.#client.hgetall(WATCHLIST_KEY(userId));
+    if (!raw) return [];
+    return Object.values(raw).map((v) => JSON.parse(v as string) as WatchlistEntry);
+  }
+
+  async removeFromWatchlist(userId: number, ticker: string): Promise<void> {
+    await this.#client.hdel(WATCHLIST_KEY(userId), ticker);
+  }
+
+  async isInWatchlist(userId: number, ticker: string): Promise<boolean> {
+    const exists = await this.#client.hexists(WATCHLIST_KEY(userId), ticker);
+    return exists === 1;
+  }
 }
 
 class MemoryStore implements PersistentStore {
   #rules = new Map<string, AlertRule>();
   #userRules = new Map<number, Set<string>>();
   #quietHours = new Map<number, QuietHours>();
+  #watchlist = new Map<number, Map<string, WatchlistEntry>>();
 
   async createAlertRule(rule: AlertRule): Promise<void> {
     this.#rules.set(rule.id, rule);
@@ -120,6 +153,29 @@ class MemoryStore implements PersistentStore {
 
   async deleteQuietHours(userId: number): Promise<void> {
     this.#quietHours.delete(userId);
+  }
+
+  async addToWatchlist(userId: number, ticker: string, coinId: string): Promise<void> {
+    let map = this.#watchlist.get(userId);
+    if (!map) {
+      map = new Map();
+      this.#watchlist.set(userId, map);
+    }
+    map.set(ticker, { userId, ticker, coinId, addedAt: new Date().toISOString() });
+  }
+
+  async getWatchlist(userId: number): Promise<WatchlistEntry[]> {
+    const map = this.#watchlist.get(userId);
+    if (!map) return [];
+    return [...map.values()];
+  }
+
+  async removeFromWatchlist(userId: number, ticker: string): Promise<void> {
+    this.#watchlist.get(userId)?.delete(ticker);
+  }
+
+  async isInWatchlist(userId: number, ticker: string): Promise<boolean> {
+    return this.#watchlist.get(userId)?.has(ticker) ?? false;
   }
 }
 

@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { createBot, menuKeyboard, inlineKeyboard } from "@agntdev/bot-toolkit";
-import { createStore, newAlertRule, newPercentAlertRule } from "./store.js";
+import { createStore, newAlertRule, newPercentAlertRule, type WatchlistEntry } from "./store.js";
 
 export interface Session {
   initializedAt: string;
@@ -15,6 +15,7 @@ export interface Session {
   alertPctCoin?: string;
   alertPctPercent?: number;
   alertPctTimeframe?: number;
+  watchlistStep?: "coin" | "custom";
 }
 
 const WELCOME_TEXT = [
@@ -66,6 +67,158 @@ const LANGUAGE_TO_TZ: Record<string, string> = {
   hu: "UTC+1",
 };
 
+const KNOWN_COINS: Record<string, string> = {
+  BTC: "bitcoin",
+  ETH: "ethereum",
+  TON: "the-open-network",
+  USDT: "tether",
+  BNB: "binancecoin",
+  SOL: "solana",
+  XRP: "ripple",
+  USDC: "usd-coin",
+  ADA: "cardano",
+  DOGE: "dogecoin",
+  TRX: "tron",
+  AVAX: "avalanche-2",
+  DOT: "polkadot",
+  MATIC: "matic-network",
+  LINK: "chainlink",
+  SHIB: "shiba-inu",
+  LTC: "litecoin",
+  UNI: "uniswap",
+  ATOM: "cosmos",
+  XLM: "stellar",
+  NEAR: "near",
+  ALGO: "algorand",
+  APT: "aptos",
+  SUI: "sui",
+  ARB: "arbitrum",
+  OP: "optimism",
+  FIL: "filecoin",
+  ICP: "internet-computer",
+  VET: "vechain",
+  GRT: "the-graph",
+  THETA: "theta-token",
+  ETC: "ethereum-classic",
+  FTM: "fantom",
+  FLOW: "flow",
+  SAND: "the-sandbox",
+  MANA: "decentraland",
+  AXS: "axie-infinity",
+  GALA: "gala",
+  ENJ: "enjincoin",
+  CHZ: "chiliz",
+  CRO: "crypto-com-chain",
+  FTT: "ftx-token",
+  BIT: "bitdao",
+  OKB: "okb",
+  LEO: "leo-token",
+  KCS: "kucoin-shares",
+  XMR: "monero",
+  DASH: "dash",
+  ZEC: "zcash",
+  XTZ: "tezos",
+  EOS: "eos",
+  WAVES: "waves",
+  NEO: "neo",
+  QTUM: "qtum",
+  ZIL: "zilliqa",
+  ICX: "icon",
+  ONT: "ontology",
+  BTT: "bittorrent",
+  HOT: "holotoken",
+  BAT: "basic-attention-token",
+  ZRX: "0x",
+  REN: "republic-protocol",
+  LRC: "loopring",
+  SNX: "havven",
+  COMP: "compound-governance-token",
+  AAVE: "aave",
+  MKR: "maker",
+  CRV: "curve-dao-token",
+  SUSHI: "sushi",
+  YFI: "yearn-finance",
+  INJ: "injective-protocol",
+  RUNE: "thorchain",
+  KAVA: "kava",
+  DYDX: "dydx",
+  GMX: "gmx",
+  LDO: "lido-dao",
+  RPL: "rocket-pool",
+  STX: "blockstack",
+  MINA: "mina-protocol",
+  EGLD: "elrond-erd-2",
+  XEC: "ecash",
+  KLAY: "klay-token",
+  KDA: "kadena",
+  CSPR: "casper-network",
+  FLR: "flare-networks",
+  CORE: "coredaoorg",
+  CFX: "conflux-token",
+  AKT: "akash-network",
+  ROSE: "oasis-network",
+  GLMR: "moonbeam",
+  MOVR: "moonriver",
+  ASTR: "astar",
+  AUDIO: "audius",
+  ENS: "ethereum-name-service",
+  LPT: "livepeer",
+  FET: "fetch-ai",
+  AGIX: "singularitynet",
+  OCEAN: "ocean-protocol",
+  WLD: "worldcoin-wld",
+  SEI: "sei-network",
+  TIA: "celestia",
+  PYTH: "pyth-network",
+  JUP: "jupiter-exchange-solana",
+  WIF: "dogwifcoin",
+  NOT: "notcoin",
+  PEPE: "pepe",
+  FLOKI: "floki",
+  BONK: "bonk",
+  ORDI: "ordinals",
+  STRK: "starknet",
+  ENA: "ethena",
+  OM: "mantra-dao",
+  TAO: "bittensor",
+  RENDER: "render-token",
+  HNT: "helium",
+  BSV: "bitcoin-sv",
+  BCH: "bitcoin-cash",
+};
+
+function levenshtein(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  const dp: number[][] = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
+    }
+  }
+  return dp[m][n];
+}
+
+function suggestTickers(input: string, maxSuggestions = 3): string[] {
+  const inputUpper = input.toUpperCase();
+  if (KNOWN_COINS[inputUpper]) return [];
+  const scored = Object.keys(KNOWN_COINS)
+    .map((t) => ({ ticker: t, distance: levenshtein(inputUpper, t) }))
+    .sort((a, b) => a.distance - b.distance);
+  const suggestions = scored
+    .filter((s) => s.distance >= 1 && s.distance <= 2)
+    .slice(0, maxSuggestions)
+    .map((s) => s.ticker);
+  return suggestions;
+}
+
+function coinIdForTicker(ticker: string): string | null {
+  return KNOWN_COINS[ticker.toUpperCase()] ?? null;
+}
+
 function detectTimezone(languageCode?: string): string {
   if (languageCode) {
     const tz = LANGUAGE_TO_TZ[languageCode] ?? LANGUAGE_TO_TZ[languageCode.split("-")[0]];
@@ -116,12 +269,54 @@ const HELP_TEXT = [
 ].join("\n");
 
 const MENU_RESPONSES: Record<string, string> = {
-  "menu:add": "Add Coin will let you add BTC, ETH, TON, or a custom ticker to your watchlist.",
   "menu:watchlist": "My Watchlist will show your tracked coins and remove buttons.",
   "menu:price": "Price Check will show current prices for one coin or your full watchlist.",
   "menu:settings": "Settings will manage timezone, quiet hours, cooldown, and morning summaries.",
   "menu:help": "Help will list commands and explain how CryptoWatchr alerts work.",
 };
+
+const ADD_COIN_TEXT = "Add a coin to your watchlist:\n\nChoose from the common coins below or enter a custom ticker.";
+
+function watchlistCoinKeyboard() {
+  return inlineKeyboard([
+    [{ text: "Bitcoin (BTC)", callback_data: "watchlist:coin:BTC" }],
+    [{ text: "Ethereum (ETH)", callback_data: "watchlist:coin:ETH" }],
+    [{ text: "Toncoin (TON)", callback_data: "watchlist:coin:TON" }],
+    [{ text: "Custom ticker", callback_data: "watchlist:coin:custom" }],
+    [{ text: "Back to menu", callback_data: "watchlist:back" }],
+  ]);
+}
+
+function watchlistAddedText(ticker: string) {
+  return `${ticker} added to your watchlist.\n\nUse the menu to manage your watchlist or create alerts for your coins.`;
+}
+
+function watchlistDuplicateText(ticker: string) {
+  return `${ticker} is already in your watchlist.\n\nUse the menu to manage your watchlist or add another coin.`;
+}
+
+function watchlistCustomPromptText() {
+  return "Enter the coin ticker you want to add (e.g. SOL, DOGE, ADA):";
+}
+
+function watchlistCustomKeyboard() {
+  return inlineKeyboard([
+    [{ text: "Back", callback_data: "watchlist:back:coin" }],
+  ]);
+}
+
+function unknownTickerText(input: string, suggestions: string[]) {
+  const lines = [`"${input}" is not a recognized ticker.`];
+  if (suggestions.length > 0) {
+    lines.push("", `Did you mean: ${suggestions.join(", ")}?`);
+  }
+  lines.push("", "Please try again with a valid ticker, or pick from the preset coins.");
+  return lines.join("\n");
+}
+
+function clearWatchlistSession(session: Session) {
+  session.watchlistStep = undefined;
+}
 
 function mainMenu() {
   return menuKeyboard(
@@ -296,12 +491,14 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
 
   bot.command("start", async (ctx) => {
     clearAlertSession(ctx.session);
+    clearWatchlistSession(ctx.session);
     ctx.session.onboardingStep = "timezone";
     await ctx.reply(WELCOME_TEXT, { reply_markup: timezoneKeyboard() });
   });
 
   bot.command("help", async (ctx) => {
     clearAlertSession(ctx.session);
+    clearWatchlistSession(ctx.session);
     await ctx.reply(HELP_TEXT, { parse_mode: "Markdown", reply_markup: mainMenu() });
   });
 
@@ -357,6 +554,67 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
       return;
     }
 
+    // --- Watchlist flow callbacks ---
+
+    if (data === "menu:add") {
+      clearAlertSession(ctx.session);
+      clearWatchlistSession(ctx.session);
+      ctx.session.watchlistStep = "coin";
+      await ctx.answerCallbackQuery();
+      await ctx.editMessageText(ADD_COIN_TEXT, { reply_markup: watchlistCoinKeyboard() });
+      return;
+    }
+
+    if (data.startsWith("watchlist:coin:")) {
+      const coin = data.slice("watchlist:coin:".length);
+
+      if (coin === "custom") {
+        ctx.session.watchlistStep = "custom";
+        await ctx.answerCallbackQuery();
+        await ctx.editMessageText(watchlistCustomPromptText(), { reply_markup: watchlistCustomKeyboard() });
+        return;
+      }
+
+      const coinId = coinIdForTicker(coin);
+      if (!coinId) {
+        await ctx.answerCallbackQuery({ text: "Coin not recognized." });
+        return;
+      }
+
+      try {
+        const already = await store.isInWatchlist(ctx.chat!.id, coin);
+        if (already) {
+          await ctx.answerCallbackQuery();
+          await ctx.editMessageText(watchlistDuplicateText(coin), { reply_markup: mainMenu() });
+          clearWatchlistSession(ctx.session);
+          return;
+        }
+        await store.addToWatchlist(ctx.chat!.id, coin, coinId);
+      } catch {
+        await ctx.answerCallbackQuery({ text: "Failed to add coin. Please try again." });
+        return;
+      }
+
+      await ctx.answerCallbackQuery();
+      await ctx.editMessageText(watchlistAddedText(coin), { reply_markup: mainMenu() });
+      clearWatchlistSession(ctx.session);
+      return;
+    }
+
+    if (data === "watchlist:back") {
+      clearWatchlistSession(ctx.session);
+      await ctx.answerCallbackQuery();
+      await ctx.editMessageText(MAIN_MENU_TEXT, { reply_markup: mainMenu() });
+      return;
+    }
+
+    if (data === "watchlist:back:coin") {
+      ctx.session.watchlistStep = "coin";
+      await ctx.answerCallbackQuery();
+      await ctx.editMessageText(ADD_COIN_TEXT, { reply_markup: watchlistCoinKeyboard() });
+      return;
+    }
+
     // --- Alert flow callbacks ---
 
     if (data === "menu:alerts") {
@@ -369,6 +627,7 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
 
     if (data === "menu:back") {
       clearAlertSession(ctx.session);
+      clearWatchlistSession(ctx.session);
       await ctx.answerCallbackQuery();
       await ctx.editMessageText(MAIN_MENU_TEXT, { reply_markup: mainMenu() });
       return;
@@ -560,6 +819,45 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
         confirmText(tz, undefined, ctx.session.quietHoursStart, ctx.session.quietHoursEnd),
         { reply_markup: confirmKeyboard() },
       );
+      return;
+    }
+
+    // --- Watchlist flow message handlers ---
+
+    if (ctx.session.watchlistStep === "custom") {
+      const raw = ctx.message?.text?.trim().toUpperCase();
+      if (!raw || raw.length < 2) {
+        await ctx.reply(
+          "Please enter a valid ticker (at least 2 characters, e.g. BTC, ETH).",
+          { reply_markup: watchlistCustomKeyboard() },
+        );
+        return;
+      }
+
+      const coinId = coinIdForTicker(raw);
+      if (!coinId) {
+        const suggestions = suggestTickers(raw);
+        await ctx.reply(unknownTickerText(raw, suggestions), { reply_markup: watchlistCoinKeyboard() });
+        ctx.session.watchlistStep = "coin";
+        return;
+      }
+
+      try {
+        const already = await store.isInWatchlist(ctx.chat!.id, raw);
+        if (already) {
+          await ctx.reply(watchlistDuplicateText(raw), { reply_markup: mainMenu() });
+          clearWatchlistSession(ctx.session);
+          return;
+        }
+        await store.addToWatchlist(ctx.chat!.id, raw, coinId);
+      } catch {
+        await ctx.reply("Failed to add coin. Please try again later.", { reply_markup: mainMenu() });
+        clearWatchlistSession(ctx.session);
+        return;
+      }
+
+      await ctx.reply(watchlistAddedText(raw), { reply_markup: mainMenu() });
+      clearWatchlistSession(ctx.session);
       return;
     }
 
