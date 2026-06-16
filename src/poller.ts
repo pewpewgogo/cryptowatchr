@@ -3,6 +3,25 @@ import { fetchPrices } from "./price.js";
 import { evaluateAlertRules, formatAlertMessage, DEFAULT_COOLDOWN_MS } from "./evaluator.js";
 
 const POLL_INTERVAL_MS = 60_000;
+const MAX_RETRIES = 3;
+const BASE_RETRY_DELAY_MS = 2000;
+
+async function fetchPricesWithRetry(coinIds: string[]): Promise<Record<string, { usd: number; usd_24h_change: number | null; last_updated_at: number }> | null> {
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      return await fetchPrices(coinIds);
+    } catch (err) {
+      if (attempt < MAX_RETRIES) {
+        const delay = BASE_RETRY_DELAY_MS * Math.pow(2, attempt);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        continue;
+      }
+      console.error("[CryptoWatchr] price feed failure after all retries:", err);
+      return null;
+    }
+  }
+  return null;
+}
 
 export function startPoller(
   store: PersistentStore,
@@ -20,7 +39,10 @@ export function startPoller(
         return;
       }
 
-      const data = await fetchPrices(coinIds);
+      const data = await fetchPricesWithRetry(coinIds);
+      if (!data) {
+        return;
+      }
 
       const triggered = await evaluateAlertRules(store, data);
       for (const alert of triggered) {
