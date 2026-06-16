@@ -4,10 +4,12 @@ import { randomUUID } from "node:crypto";
 export interface AlertRule {
   id: string;
   userId: number;
-  type: "threshold";
+  type: "threshold" | "percent";
   coin: string;
-  direction: "above" | "below";
-  price: number;
+  direction?: "above" | "below";
+  price?: number;
+  percent?: number;
+  timeframeMinutes?: number;
   createdAt: string;
 }
 
@@ -103,6 +105,23 @@ export function newAlertRule(
     coin,
     direction,
     price,
+    createdAt: new Date().toISOString(),
+  };
+}
+
+export function newPercentAlertRule(
+  userId: number,
+  coin: string,
+  percent: number,
+  timeframeMinutes: number,
+): AlertRule {
+  return {
+    id: randomUUID(),
+    userId,
+    type: "percent",
+    coin,
+    percent,
+    timeframeMinutes,
     createdAt: new Date().toISOString(),
   };
 }

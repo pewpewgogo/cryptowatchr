@@ -1,14 +1,17 @@
 import { fileURLToPath } from "node:url";
 import { createBot, menuKeyboard, inlineKeyboard } from "@agntdev/bot-toolkit";
-import { createStore, newAlertRule } from "./store.js";
+import { createStore, newAlertRule, newPercentAlertRule } from "./store.js";
 
 export interface Session {
   initializedAt: string;
   onboardingStep?: "timezone" | "confirm";
   timezone?: string;
-  alertStep?: "type" | "coin" | "direction" | "price";
+  alertStep?: "type" | "coin" | "direction" | "price" | "pctCoin" | "pctPercent" | "pctTimeframe";
   alertCoin?: string;
   alertDirection?: "above" | "below";
+  alertPctCoin?: string;
+  alertPctPercent?: number;
+  alertPctTimeframe?: number;
 }
 
 const WELCOME_TEXT = [
@@ -190,10 +193,71 @@ function alertCreatedText(coin: string, direction: string, price: number) {
   return `Alert created: ${coin} ${direction} $${formattedPrice}`;
 }
 
+const PCT_COIN_SELECTION_TEXT = "Select a coin for your percent alert:";
+
+function pctCoinSelectionKeyboard() {
+  return inlineKeyboard([
+    [{ text: "Bitcoin (BTC)", callback_data: "alert:pcoin:BTC" }],
+    [{ text: "Ethereum (ETH)", callback_data: "alert:pcoin:ETH" }],
+    [{ text: "Toncoin (TON)", callback_data: "alert:pcoin:TON" }],
+    [{ text: "Custom ticker", callback_data: "alert:pcoin:custom" }],
+    [{ text: "Any in my list", callback_data: "alert:pcoin:any" }],
+    [{ text: "Back", callback_data: "alert:back:type" }],
+  ]);
+}
+
+function pctPercentKeyboard() {
+  return inlineKeyboard([
+    [{ text: "Back", callback_data: "alert:pct:back:coin" }],
+    [{ text: "Cancel", callback_data: "alert:cancel" }],
+  ]);
+}
+
+function pctPercentPromptText(coin: string) {
+  const label = coin === "any" ? "any coin in your watchlist" : coin;
+  return `Enter the percentage change you want to track for ${label}.\n\nExample: if you enter 5, you will be alerted when ${label} moves more than 5% in your chosen timeframe.`;
+}
+
+function pctTimeframeKeyboard() {
+  return inlineKeyboard([
+    [{ text: "Back", callback_data: "alert:pct:back:pct" }],
+    [{ text: "Cancel", callback_data: "alert:cancel" }],
+  ]);
+}
+
+const PCT_TIMEFRAME_PROMPT_TEXT = [
+  "Enter the timeframe for your percent alert.",
+  "",
+  "Examples:",
+  "1h — 1 hour",
+  "4h — 4 hours",
+  "30m — 30 minutes",
+  "60 — 60 minutes (plain number = minutes)",
+  "2.5h — 2 hours 30 minutes",
+  "",
+  "Default: 1 hour.",
+].join("\n");
+
+function pctAlertCreatedText(coin: string, percent: number, timeframeMinutes: number) {
+  const formattedPercent = percent.toLocaleString("en-US", { maximumFractionDigits: 2 });
+  const coinLabel = coin === "any" ? "any coin in your watchlist" : coin;
+  let timeframeLabel: string;
+  if (timeframeMinutes >= 60 && timeframeMinutes % 60 === 0) {
+    const h = timeframeMinutes / 60;
+    timeframeLabel = h === 1 ? "1 hour" : `${h} hours`;
+  } else {
+    timeframeLabel = `${timeframeMinutes} minutes`;
+  }
+  return `Percent alert created: ${coinLabel} moves more than ${formattedPercent}% in ${timeframeLabel}`;
+}
+
 function clearAlertSession(session: Session) {
   session.alertStep = undefined;
   session.alertCoin = undefined;
   session.alertDirection = undefined;
+  session.alertPctCoin = undefined;
+  session.alertPctPercent = undefined;
+  session.alertPctTimeframe = undefined;
 }
 
 export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
@@ -276,7 +340,9 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
     }
 
     if (data === "alert:type:percent") {
-      await ctx.answerCallbackQuery({ text: "Percent alerts coming soon." });
+      ctx.session.alertStep = "pctCoin";
+      await ctx.answerCallbackQuery();
+      await ctx.editMessageText(PCT_COIN_SELECTION_TEXT, { reply_markup: pctCoinSelectionKeyboard() });
       return;
     }
 
@@ -337,6 +403,45 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
       ctx.session.alertStep = "price";
       await ctx.answerCallbackQuery();
       await ctx.editMessageText(pricePromptText(coin, dir), { reply_markup: priceKeyboard() });
+      return;
+    }
+
+    // --- Percent alert callbacks ---
+
+    if (data.startsWith("alert:pcoin:")) {
+      const coin = data.slice("alert:pcoin:".length);
+
+      if (coin === "custom") {
+        ctx.session.alertStep = "pctCoin";
+        await ctx.answerCallbackQuery();
+        await ctx.editMessageText(
+          "Enter the coin ticker (e.g. SOL, DOGE, ADA):",
+          { reply_markup: inlineKeyboard([[{ text: "Back", callback_data: "alert:back:type" }]]) },
+        );
+        return;
+      }
+
+      ctx.session.alertPctCoin = coin;
+      ctx.session.alertStep = "pctPercent";
+      await ctx.answerCallbackQuery();
+      await ctx.editMessageText(pctPercentPromptText(coin), { reply_markup: pctPercentKeyboard() });
+      return;
+    }
+
+    if (data === "alert:pct:back:coin") {
+      ctx.session.alertStep = "pctCoin";
+      ctx.session.alertPctPercent = undefined;
+      await ctx.answerCallbackQuery();
+      await ctx.editMessageText(PCT_COIN_SELECTION_TEXT, { reply_markup: pctCoinSelectionKeyboard() });
+      return;
+    }
+
+    if (data === "alert:pct:back:pct") {
+      ctx.session.alertStep = "pctPercent";
+      ctx.session.alertPctTimeframe = undefined;
+      await ctx.answerCallbackQuery();
+      const coin = ctx.session.alertPctCoin ?? "BTC";
+      await ctx.editMessageText(pctPercentPromptText(coin), { reply_markup: pctPercentKeyboard() });
       return;
     }
 
@@ -422,6 +527,109 @@ export function makeBot(token = process.env.BOT_TOKEN ?? "test:cryptowatchr") {
 
       clearAlertSession(ctx.session);
       await ctx.reply(alertCreatedText(coin, direction, price), { reply_markup: mainMenu() });
+      return;
+    }
+
+    if (ctx.session.alertStep === "pctCoin") {
+      const ticker = ctx.message?.text?.trim().toUpperCase();
+      if (ticker && ticker.length >= 2) {
+        ctx.session.alertPctCoin = ticker;
+        ctx.session.alertStep = "pctPercent";
+        await ctx.reply(pctPercentPromptText(ticker), { reply_markup: pctPercentKeyboard() });
+      } else {
+        await ctx.reply(
+          "Please enter a valid ticker (e.g. BTC, ETH).",
+          { reply_markup: inlineKeyboard([[{ text: "Back", callback_data: "alert:back:type" }]]) },
+        );
+      }
+      return;
+    }
+
+    if (ctx.session.alertStep === "pctPercent") {
+      const raw = ctx.message?.text?.trim().replace(/[,\s%]/g, "");
+      const percent = Number(raw);
+      const coin = ctx.session.alertPctCoin;
+
+      if (isNaN(percent) || percent <= 0) {
+        if (coin) {
+          await ctx.reply(
+            "Please enter a valid positive percentage (e.g. 5 for 5%).",
+            { reply_markup: pctPercentKeyboard() },
+          );
+        } else {
+          clearAlertSession(ctx.session);
+          await ctx.reply("Something went wrong. Please try again from the Create Alert menu.", { reply_markup: mainMenu() });
+        }
+        return;
+      }
+
+      if (!coin) {
+        clearAlertSession(ctx.session);
+        await ctx.reply(MAIN_MENU_TEXT, { reply_markup: mainMenu() });
+        return;
+      }
+
+      ctx.session.alertPctPercent = percent;
+      ctx.session.alertStep = "pctTimeframe";
+      await ctx.reply(PCT_TIMEFRAME_PROMPT_TEXT, { reply_markup: pctTimeframeKeyboard() });
+      return;
+    }
+
+    if (ctx.session.alertStep === "pctTimeframe") {
+      const raw = ctx.message?.text?.trim().toLowerCase();
+
+      if (!raw) {
+        await ctx.reply(
+          "Please enter a valid timeframe (e.g. 1h, 4h, 30m, or 60 for minutes).",
+          { reply_markup: pctTimeframeKeyboard() },
+        );
+        return;
+      }
+
+      let minutes: number;
+
+      const hMatch = raw.match(/^([\d.]+)\s*h$/);
+      const mMatch = raw.match(/^([\d.]+)\s*m$/);
+      const numMatch = raw.match(/^([\d.]+)$/);
+
+      if (hMatch) {
+        minutes = Math.round(Number(hMatch[1]) * 60);
+      } else if (mMatch) {
+        minutes = Math.round(Number(mMatch[1]));
+      } else if (numMatch) {
+        minutes = Math.round(Number(numMatch[1]));
+      } else {
+        minutes = NaN;
+      }
+
+      const coin = ctx.session.alertPctCoin;
+      const percent = ctx.session.alertPctPercent;
+
+      if (isNaN(minutes) || minutes <= 0) {
+        await ctx.reply(
+          "Please enter a valid timeframe (e.g. 1h, 4h, 30m, or 60 for minutes).",
+          { reply_markup: pctTimeframeKeyboard() },
+        );
+        return;
+      }
+
+      if (!coin || percent == null || isNaN(percent)) {
+        clearAlertSession(ctx.session);
+        await ctx.reply(MAIN_MENU_TEXT, { reply_markup: mainMenu() });
+        return;
+      }
+
+      const rule = newPercentAlertRule(ctx.chat!.id, coin, percent, minutes);
+      try {
+        await store.createAlertRule(rule);
+      } catch {
+        await ctx.reply("Failed to save your alert. Please try again later.", { reply_markup: mainMenu() });
+        clearAlertSession(ctx.session);
+        return;
+      }
+
+      clearAlertSession(ctx.session);
+      await ctx.reply(pctAlertCreatedText(coin, percent, minutes), { reply_markup: mainMenu() });
       return;
     }
 

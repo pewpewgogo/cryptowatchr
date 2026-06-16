@@ -1,0 +1,617 @@
+[
+  {
+    "name": "create a percent alert for BTC at 5% in 1 hour",
+    "steps": [
+      {
+        "send": { "text": "/start" },
+        "expect": [{ "method": "sendMessage" }]
+      },
+      {
+        "send": { "callback": "onboard:tz:UTC+3", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "onboard:done", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "menu:alerts", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          {
+            "method": "editMessageText",
+            "payload": {
+              "text": "Choose the type of alert you want to create:",
+              "reply_markup": {
+                "inline_keyboard": [
+                  [{ "text": "Threshold Alert", "callback_data": "alert:type:threshold" }],
+                  [{ "text": "Percent Alert", "callback_data": "alert:type:percent" }],
+                  [{ "text": "Back to menu", "callback_data": "menu:back" }]
+                ]
+              }
+            }
+          }
+        ]
+      },
+      {
+        "send": { "callback": "alert:type:percent", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          {
+            "method": "editMessageText",
+            "payload": {
+              "text": "Select a coin for your percent alert:",
+              "reply_markup": {
+                "inline_keyboard": [
+                  [{ "text": "Bitcoin (BTC)", "callback_data": "alert:pcoin:BTC" }],
+                  [{ "text": "Ethereum (ETH)", "callback_data": "alert:pcoin:ETH" }],
+                  [{ "text": "Toncoin (TON)", "callback_data": "alert:pcoin:TON" }],
+                  [{ "text": "Custom ticker", "callback_data": "alert:pcoin:custom" }],
+                  [{ "text": "Any in my list", "callback_data": "alert:pcoin:any" }],
+                  [{ "text": "Back", "callback_data": "alert:back:type" }]
+                ]
+              }
+            }
+          }
+        ]
+      },
+      {
+        "send": { "callback": "alert:pcoin:BTC", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          {
+            "method": "editMessageText",
+            "payload": {
+              "text": "Enter the percentage change you want to track for BTC.\n\nExample: if you enter 5, you will be alerted when BTC moves more than 5% in your chosen timeframe.",
+              "reply_markup": {
+                "inline_keyboard": [
+                  [{ "text": "Back", "callback_data": "alert:pct:back:coin" }],
+                  [{ "text": "Cancel", "callback_data": "alert:cancel" }]
+                ]
+              }
+            }
+          }
+        ]
+      },
+      {
+        "send": { "text": "5" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "Enter the timeframe for your percent alert.\n\nExamples:\n1h \u2014 1 hour\n4h \u2014 4 hours\n30m \u2014 30 minutes\n60 \u2014 60 minutes (plain number = minutes)\n2.5h \u2014 2 hours 30 minutes\n\nDefault: 1 hour.",
+              "reply_markup": {
+                "inline_keyboard": [
+                  [{ "text": "Back", "callback_data": "alert:pct:back:pct" }],
+                  [{ "text": "Cancel", "callback_data": "alert:cancel" }]
+                ]
+              }
+            }
+          }
+        ]
+      },
+      {
+        "send": { "text": "1h" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "Percent alert created: BTC moves more than 5% in 1 hour",
+              "reply_markup": {
+                "inline_keyboard": [
+                  [
+                    { "text": "Add Coin", "callback_data": "menu:add" },
+                    { "text": "My Watchlist", "callback_data": "menu:watchlist" }
+                  ],
+                  [
+                    { "text": "Create Alert", "callback_data": "menu:alerts" },
+                    { "text": "Price Check", "callback_data": "menu:price" }
+                  ],
+                  [
+                    { "text": "Settings", "callback_data": "menu:settings" },
+                    { "text": "Help", "callback_data": "menu:help" }
+                  ]
+                ]
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "create a percent alert for any coin in my list",
+    "steps": [
+      {
+        "send": { "text": "/start" },
+        "expect": [{ "method": "sendMessage" }]
+      },
+      {
+        "send": { "callback": "onboard:tz:UTC+3", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "onboard:done", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "menu:alerts", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "alert:type:percent", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "alert:pcoin:any", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          {
+            "method": "editMessageText",
+            "payload": {
+              "text": "Enter the percentage change you want to track for any coin in your watchlist.\n\nExample: if you enter 5, you will be alerted when any coin in your watchlist moves more than 5% in your chosen timeframe."
+            }
+          }
+        ]
+      },
+      {
+        "send": { "text": "10" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "Enter the timeframe for your percent alert.\n\nExamples:\n1h \u2014 1 hour\n4h \u2014 4 hours\n30m \u2014 30 minutes\n60 \u2014 60 minutes (plain number = minutes)\n2.5h \u2014 2 hours 30 minutes\n\nDefault: 1 hour.",
+              "reply_markup": {
+                "inline_keyboard": [
+                  [{ "text": "Back", "callback_data": "alert:pct:back:pct" }],
+                  [{ "text": "Cancel", "callback_data": "alert:cancel" }]
+                ]
+              }
+            }
+          }
+        ]
+      },
+      {
+        "send": { "text": "2h" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "Percent alert created: any coin in your watchlist moves more than 10% in 2 hours",
+              "reply_markup": {
+                "inline_keyboard": [
+                  [
+                    { "text": "Add Coin", "callback_data": "menu:add" },
+                    { "text": "My Watchlist", "callback_data": "menu:watchlist" }
+                  ],
+                  [
+                    { "text": "Create Alert", "callback_data": "menu:alerts" },
+                    { "text": "Price Check", "callback_data": "menu:price" }
+                  ],
+                  [
+                    { "text": "Settings", "callback_data": "menu:settings" },
+                    { "text": "Help", "callback_data": "menu:help" }
+                  ]
+                ]
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "create a percent alert with custom ticker",
+    "steps": [
+      {
+        "send": { "text": "/start" },
+        "expect": [{ "method": "sendMessage" }]
+      },
+      {
+        "send": { "callback": "onboard:tz:UTC+3", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "onboard:done", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "menu:alerts", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "alert:type:percent", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "alert:pcoin:custom", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          {
+            "method": "editMessageText",
+            "payload": {
+              "text": "Enter the coin ticker (e.g. SOL, DOGE, ADA):",
+              "reply_markup": {
+                "inline_keyboard": [
+                  [{ "text": "Back", "callback_data": "alert:back:type" }]
+                ]
+              }
+            }
+          }
+        ]
+      },
+      {
+        "send": { "text": "SOL" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "Enter the percentage change you want to track for SOL.\n\nExample: if you enter 5, you will be alerted when SOL moves more than 5% in your chosen timeframe.",
+              "reply_markup": {
+                "inline_keyboard": [
+                  [{ "text": "Back", "callback_data": "alert:pct:back:coin" }],
+                  [{ "text": "Cancel", "callback_data": "alert:cancel" }]
+                ]
+              }
+            }
+          }
+        ]
+      },
+      {
+        "send": { "text": "3" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "Enter the timeframe for your percent alert.\n\nExamples:\n1h \u2014 1 hour\n4h \u2014 4 hours\n30m \u2014 30 minutes\n60 \u2014 60 minutes (plain number = minutes)\n2.5h \u2014 2 hours 30 minutes\n\nDefault: 1 hour.",
+              "reply_markup": {
+                "inline_keyboard": [
+                  [{ "text": "Back", "callback_data": "alert:pct:back:pct" }],
+                  [{ "text": "Cancel", "callback_data": "alert:cancel" }]
+                ]
+              }
+            }
+          }
+        ]
+      },
+      {
+        "send": { "text": "30m" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "Percent alert created: SOL moves more than 3% in 30 minutes",
+              "reply_markup": {
+                "inline_keyboard": [
+                  [
+                    { "text": "Add Coin", "callback_data": "menu:add" },
+                    { "text": "My Watchlist", "callback_data": "menu:watchlist" }
+                  ],
+                  [
+                    { "text": "Create Alert", "callback_data": "menu:alerts" },
+                    { "text": "Price Check", "callback_data": "menu:price" }
+                  ],
+                  [
+                    { "text": "Settings", "callback_data": "menu:settings" },
+                    { "text": "Help", "callback_data": "menu:help" }
+                  ]
+                ]
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "invalid percentage shows validation error",
+    "steps": [
+      {
+        "send": { "text": "/start" },
+        "expect": [{ "method": "sendMessage" }]
+      },
+      {
+        "send": { "callback": "onboard:tz:UTC+3", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "onboard:done", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "menu:alerts", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "alert:type:percent", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "alert:pcoin:BTC", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "text": "not a number" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "Please enter a valid positive percentage (e.g. 5 for 5%).",
+              "reply_markup": {
+                "inline_keyboard": [
+                  [{ "text": "Back", "callback_data": "alert:pct:back:coin" }],
+                  [{ "text": "Cancel", "callback_data": "alert:cancel" }]
+                ]
+              }
+            }
+          }
+        ]
+      },
+      {
+        "send": { "text": "0" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "Please enter a valid positive percentage (e.g. 5 for 5%)."
+            }
+          }
+        ]
+      },
+      {
+        "send": { "text": "-5" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "Please enter a valid positive percentage (e.g. 5 for 5%)."
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "invalid timeframe shows validation error",
+    "steps": [
+      {
+        "send": { "text": "/start" },
+        "expect": [{ "method": "sendMessage" }]
+      },
+      {
+        "send": { "callback": "onboard:tz:UTC+3", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "onboard:done", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "menu:alerts", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "alert:type:percent", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "alert:pcoin:BTC", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "text": "5" },
+        "expect": [{ "method": "sendMessage" }]
+      },
+      {
+        "send": { "text": "not valid" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "Please enter a valid timeframe (e.g. 1h, 4h, 30m, or 60 for minutes).",
+              "reply_markup": {
+                "inline_keyboard": [
+                  [{ "text": "Back", "callback_data": "alert:pct:back:pct" }],
+                  [{ "text": "Cancel", "callback_data": "alert:cancel" }]
+                ]
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "back navigation from percent coin selection to alert type",
+    "steps": [
+      {
+        "send": { "text": "/start" },
+        "expect": [{ "method": "sendMessage" }]
+      },
+      {
+        "send": { "callback": "onboard:tz:UTC+3", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "onboard:done", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "menu:alerts", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "alert:type:percent", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "alert:back:type", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          {
+            "method": "editMessageText",
+            "payload": {
+              "text": "Choose the type of alert you want to create:"
+            }
+          }
+        ]
+      },
+      {
+        "send": { "callback": "menu:back", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          {
+            "method": "editMessageText",
+            "payload": {
+              "text": "Welcome to CryptoWatchr.\n\nTrack coins, create price alerts, check the latest prices, and tune your quiet hours from the menu below."
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "cancel from percent flow returns to main menu",
+    "steps": [
+      {
+        "send": { "text": "/start" },
+        "expect": [{ "method": "sendMessage" }]
+      },
+      {
+        "send": { "callback": "onboard:tz:UTC+3", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "onboard:done", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "menu:alerts", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "alert:type:percent", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "alert:pcoin:BTC", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "alert:cancel", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          {
+            "method": "editMessageText",
+            "payload": {
+              "text": "Welcome to CryptoWatchr.\n\nTrack coins, create price alerts, check the latest prices, and tune your quiet hours from the menu below.",
+              "reply_markup": {
+                "inline_keyboard": [
+                  [
+                    { "text": "Add Coin", "callback_data": "menu:add" },
+                    { "text": "My Watchlist", "callback_data": "menu:watchlist" }
+                  ],
+                  [
+                    { "text": "Create Alert", "callback_data": "menu:alerts" },
+                    { "text": "Price Check", "callback_data": "menu:price" }
+                  ],
+                  [
+                    { "text": "Settings", "callback_data": "menu:settings" },
+                    { "text": "Help", "callback_data": "menu:help" }
+                  ]
+                ]
+              }
+            }
+          }
+        ]
+      }
+    ]
+  }
+]
