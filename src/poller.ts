@@ -5,6 +5,8 @@ import { evaluateAlertRules, formatAlertMessage, DEFAULT_COOLDOWN_MS } from "./e
 const POLL_INTERVAL_MS = 60_000;
 const MAX_RETRIES = 3;
 const BASE_RETRY_DELAY_MS = 2000;
+const RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+const CLEANUP_INTERVAL_POLLS = 60;
 
 async function fetchPricesWithRetry(coinIds: string[]): Promise<Record<string, { usd: number; usd_24h_change: number | null; last_updated_at: number }> | null> {
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -29,6 +31,7 @@ export function startPoller(
 ): () => void {
   let running = true;
   let timer: ReturnType<typeof setTimeout> | null = null;
+  let pollCount = 0;
 
   async function poll(): Promise<void> {
     if (!running) return;
@@ -76,6 +79,15 @@ export function startPoller(
           lastUpdatedAt: info.last_updated_at,
           polledAt: now,
         });
+      }
+
+      pollCount++;
+      if (pollCount % CLEANUP_INTERVAL_POLLS === 0) {
+        try {
+          await store.cleanupOldSnapshots(RETENTION_MS);
+        } catch (err) {
+          console.error("[CryptoWatchr] cleanupOldSnapshots failed:", err);
+        }
       }
     } catch (err) {
       console.error("[CryptoWatchr] poller error:", err);

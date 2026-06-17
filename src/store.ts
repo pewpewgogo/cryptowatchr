@@ -62,6 +62,7 @@ export interface PersistentStore {
   getAllTrackedCoinIds(): Promise<string[]>;
   savePriceSnapshot(snapshot: PriceSnapshot): Promise<void>;
   getLatestPriceSnapshot(coinId: string): Promise<PriceSnapshot | null>;
+  cleanupOldSnapshots(olderThanMs: number): Promise<void>;
   recordSentAlert(userId: number, ruleId: string, cooldownMs: number): Promise<void>;
   isAlertSuppressed(userId: number, ruleId: string): Promise<boolean>;
   setTimezone(userId: number, timezone: string): Promise<void>;
@@ -204,6 +205,10 @@ class RedisStore implements PersistentStore {
     return exists === 1;
   }
 
+  async cleanupOldSnapshots(_olderThanMs: number): Promise<void> {
+    // Redis stores only the latest snapshot per coin; keys are overwritten, no accumulation.
+  }
+
   async setTimezone(userId: number, timezone: string): Promise<void> {
     const key = `${PREFIX}timezone:${userId}`;
     await this.#client.set(key, timezone);
@@ -232,6 +237,52 @@ class RedisStore implements PersistentStore {
   async isInWatchlist(userId: number, ticker: string): Promise<boolean> {
     const exists = await this.#client.hexists(WATCHLIST_KEY(userId), ticker);
     return exists === 1;
+  }
+
+  async recordUserActivity(userId: number): Promise<void> {
+    await this.#client.set(`${PREFIX}last_active:${userId}`, String(Date.now()));
+  }
+
+  async incrementAlertFireCount(ruleId: string): Promise<void> {
+    await this.#client.incr(`${PREFIX}fire_count:${ruleId}`);
+  }
+
+  async getAdminStats(): Promise<AdminStats> {
+    const userIds = new Set<number>();
+    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    let activeCount = 0;
+
+    let cursor = "0";
+    do {
+      const [nextCursor, keys] = await this.#client.scan(cursor, "MATCH", `${PREFIX}last_active:*`, "COUNT", 100);
+      cursor = nextCursor;
+      for (const key of keys) {
+        const raw = await this.#client.get(key);
+        if (!raw) continue;
+        const ts = Number(raw);
+        const uid = Number(key.slice(`${PREFIX}last_active:`.length));
+        userIds.add(uid);
+        if (ts >= cutoff) activeCount++;
+      }
+    } while (cursor !== "0");
+
+    const topFiredRules: Array<{ ruleId: string; fireCount: number }> = [];
+    cursor = "0";
+    do {
+      const [nextCursor, keys] = await this.#client.scan(cursor, "MATCH", `${PREFIX}fire_count:*`, "COUNT", 100);
+      cursor = nextCursor;
+      for (const key of keys) {
+        const raw = await this.#client.get(key);
+        if (!raw) continue;
+        const count = Number(raw);
+        if (count > 0) {
+          topFiredRules.push({ ruleId: key.slice(`${PREFIX}fire_count:`.length), fireCount: count });
+        }
+      }
+    } while (cursor !== "0");
+    topFiredRules.sort((a, b) => b.fireCount - a.fireCount);
+
+    return { totalUsers: userIds.size, activeUsers30d: activeCount, topFiredRules: topFiredRules.slice(0, 10) };
   }
 }
 
@@ -301,14 +352,33 @@ class MemoryStore implements PersistentStore {
     return [...coinIds];
   }
 
-  #snapshots = new Map<string, PriceSnapshot>();
+  #snapshots = new Map<string, PriceSnapshot[]>();
 
   async savePriceSnapshot(snapshot: PriceSnapshot): Promise<void> {
-    this.#snapshots.set(snapshot.coinId, snapshot);
+    let arr = this.#snapshots.get(snapshot.coinId);
+    if (!arr) {
+      arr = [];
+      this.#snapshots.set(snapshot.coinId, arr);
+    }
+    arr.push(snapshot);
   }
 
   async getLatestPriceSnapshot(coinId: string): Promise<PriceSnapshot | null> {
-    return this.#snapshots.get(coinId) ?? null;
+    const arr = this.#snapshots.get(coinId);
+    if (!arr || arr.length === 0) return null;
+    return arr.reduce((latest, s) => s.polledAt > latest.polledAt ? s : latest, arr[0]);
+  }
+
+  async cleanupOldSnapshots(olderThanMs: number): Promise<void> {
+    const cutoff = Date.now() - olderThanMs;
+    for (const [coinId, arr] of this.#snapshots) {
+      const filtered = arr.filter((s) => s.polledAt >= cutoff);
+      if (filtered.length === 0) {
+        this.#snapshots.delete(coinId);
+      } else {
+        this.#snapshots.set(coinId, filtered);
+      }
+    }
   }
 
   #sentAlerts = new Map<string, number>();
@@ -361,6 +431,38 @@ class MemoryStore implements PersistentStore {
   async isInWatchlist(userId: number, ticker: string): Promise<boolean> {
     return this.#watchlist.get(userId)?.has(ticker) ?? false;
   }
+
+  #lastActive = new Map<number, number>();
+  #fireCounts = new Map<string, number>();
+
+  async recordUserActivity(userId: number): Promise<void> {
+    this.#lastActive.set(userId, Date.now());
+  }
+
+  async incrementAlertFireCount(ruleId: string): Promise<void> {
+    const current = this.#fireCounts.get(ruleId) ?? 0;
+    this.#fireCounts.set(ruleId, current + 1);
+  }
+
+  async getAdminStats(): Promise<AdminStats> {
+    const totalUsers = this.#lastActive.size;
+
+    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    let activeUsers30d = 0;
+    for (const ts of this.#lastActive.values()) {
+      if (ts >= cutoff) activeUsers30d++;
+    }
+
+    const topFiredRules: Array<{ ruleId: string; fireCount: number }> = [];
+    for (const [ruleId, fireCount] of this.#fireCounts) {
+      if (fireCount > 0) {
+        topFiredRules.push({ ruleId, fireCount });
+      }
+    }
+    topFiredRules.sort((a, b) => b.fireCount - a.fireCount);
+
+    return { totalUsers, activeUsers30d, topFiredRules: topFiredRules.slice(0, 10) };
+  }
 }
 
 class PostgresStore implements PersistentStore {
@@ -381,9 +483,11 @@ class PostgresStore implements PersistentStore {
         quiet_hours_start TEXT,
         quiet_hours_end TEXT,
         morning_summary_enabled BOOLEAN DEFAULT false,
-        morning_summary_time TEXT
+        morning_summary_time TEXT,
+        last_active_at BIGINT
       )
     `);
+    await this.#pool.query(`ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS last_active_at BIGINT`);
     await this.#pool.query(`
       CREATE TABLE IF NOT EXISTS alert_rules (
         id TEXT PRIMARY KEY,
@@ -394,9 +498,11 @@ class PostgresStore implements PersistentStore {
         price DOUBLE PRECISION,
         percent DOUBLE PRECISION,
         timeframe_minutes INTEGER,
-        created_at TEXT NOT NULL
+        created_at TEXT NOT NULL,
+        fire_count INTEGER DEFAULT 0
       )
     `);
+    await this.#pool.query(`ALTER TABLE alert_rules ADD COLUMN IF NOT EXISTS fire_count INTEGER DEFAULT 0`);
     await this.#pool.query(`
       CREATE TABLE IF NOT EXISTS watchlist (
         user_id BIGINT NOT NULL,
@@ -408,12 +514,17 @@ class PostgresStore implements PersistentStore {
     `);
     await this.#pool.query(`
       CREATE TABLE IF NOT EXISTS price_snapshots (
-        coin_id TEXT PRIMARY KEY,
+        id SERIAL PRIMARY KEY,
+        coin_id TEXT NOT NULL,
         usd DOUBLE PRECISION NOT NULL,
         usd_24h_change DOUBLE PRECISION,
         last_updated_at BIGINT NOT NULL,
         polled_at BIGINT NOT NULL
       )
+    `);
+    await this.#pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_price_snapshots_coin_polled
+      ON price_snapshots (coin_id, polled_at DESC)
     `);
     await this.#pool.query(`
       CREATE TABLE IF NOT EXISTS sent_alerts (
@@ -571,8 +682,7 @@ class PostgresStore implements PersistentStore {
   async savePriceSnapshot(snapshot: PriceSnapshot): Promise<void> {
     await this.#pool.query(
       `INSERT INTO price_snapshots (coin_id, usd, usd_24h_change, last_updated_at, polled_at)
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (coin_id) DO UPDATE SET usd = $2, usd_24h_change = $3, last_updated_at = $4, polled_at = $5`,
+       VALUES ($1, $2, $3, $4, $5)`,
       [snapshot.coinId, snapshot.usd, snapshot.usd24hChange, snapshot.lastUpdatedAt, snapshot.polledAt],
     );
   }
@@ -580,7 +690,8 @@ class PostgresStore implements PersistentStore {
   async getLatestPriceSnapshot(coinId: string): Promise<PriceSnapshot | null> {
     const res = await this.#pool.query(
       `SELECT coin_id, usd, usd_24h_change, last_updated_at, polled_at
-       FROM price_snapshots WHERE coin_id = $1`,
+       FROM price_snapshots WHERE coin_id = $1
+       ORDER BY polled_at DESC LIMIT 1`,
       [coinId],
     );
     if (res.rows.length === 0) return null;
@@ -611,6 +722,54 @@ class PostgresStore implements PersistentStore {
       return false;
     }
     return true;
+  }
+
+  async cleanupOldSnapshots(olderThanMs: number): Promise<void> {
+    const cutoff = Date.now() - olderThanMs;
+    await this.#pool.query(
+      `DELETE FROM price_snapshots WHERE polled_at < $1`,
+      [cutoff],
+    );
+  }
+
+  async recordUserActivity(userId: number): Promise<void> {
+    await this.#pool.query(
+      `INSERT INTO user_settings (user_id, last_active_at)
+       VALUES ($1, $2)
+       ON CONFLICT (user_id) DO UPDATE SET last_active_at = $2`,
+      [userId, Date.now()],
+    );
+  }
+
+  async incrementAlertFireCount(ruleId: string): Promise<void> {
+    await this.#pool.query(
+      `UPDATE alert_rules SET fire_count = COALESCE(fire_count, 0) + 1 WHERE id = $1`,
+      [ruleId],
+    );
+  }
+
+  async getAdminStats(): Promise<AdminStats> {
+    const [{ rows: totalRows }] = await Promise.all([
+      this.#pool.query(`SELECT COUNT(DISTINCT user_id)::int AS count FROM user_settings`),
+    ]);
+    const totalUsers = totalRows[0].count as number;
+
+    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    const { rows: activeRows } = await this.#pool.query(
+      `SELECT COUNT(DISTINCT user_id)::int AS count FROM user_settings WHERE last_active_at >= $1`,
+      [cutoff],
+    );
+    const activeUsers30d = activeRows[0].count as number;
+
+    const { rows: topRows } = await this.#pool.query(
+      `SELECT id, COALESCE(fire_count, 0) AS fire_count FROM alert_rules WHERE fire_count > 0 ORDER BY fire_count DESC LIMIT 10`,
+    );
+    const topFiredRules = topRows.map((r: { id: string; fire_count: number }) => ({
+      ruleId: r.id,
+      fireCount: Number(r.fire_count),
+    }));
+
+    return { totalUsers, activeUsers30d, topFiredRules };
   }
 }
 

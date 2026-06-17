@@ -1,0 +1,149 @@
+[
+  {
+    "name": "price command with unknown ticker shows error",
+    "steps": [
+      {
+        "send": { "text": "/start" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "Welcome to CryptoWatchr!\n\nTrack cryptocurrencies, create price alerts, check the latest prices, and tune your quiet hours \u2014 all from Telegram.\n\nLet\u2019s get you set up. What\u2019s your timezone?\nYou can also type a custom timezone like UTC+2 or America/New_York.",
+              "reply_markup": {
+                "inline_keyboard": [
+                  [
+                    { "text": "UTC-8 (PST)", "callback_data": "onboard:tz:UTC-8" },
+                    { "text": "UTC-5 (EST)", "callback_data": "onboard:tz:UTC-5" }
+                  ],
+                  [
+                    { "text": "UTC+0 (GMT)", "callback_data": "onboard:tz:UTC+0" },
+                    { "text": "UTC+3 (MSK)", "callback_data": "onboard:tz:UTC+3" }
+                  ],
+                  [
+                    { "text": "UTC+8 (CST)", "callback_data": "onboard:tz:UTC+8" },
+                    { "text": "Skip for now", "callback_data": "onboard:skip" }
+                  ]
+                ]
+              }
+            }
+          }
+        ]
+      },
+      {
+        "send": { "callback": "onboard:skip", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "text": "/price XYZ999" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "\"XYZ999\" is not a recognized ticker. Try a known ticker like BTC, ETH, or SOL.",
+              "reply_markup": {
+                "inline_keyboard": [
+                  [
+                    { "text": "Add Coin", "callback_data": "menu:add" },
+                    { "text": "My Watchlist", "callback_data": "menu:watchlist" }
+                  ],
+                  [
+                    { "text": "Create Alert", "callback_data": "menu:alerts" },
+                    { "text": "My Alerts", "callback_data": "menu:myalerts" }
+                  ],
+                  [
+                    { "text": "Price Check", "callback_data": "menu:price" },
+                    { "text": "Settings", "callback_data": "menu:settings" }
+                  ],
+                  [
+                    { "text": "Help", "callback_data": "menu:help" }
+                  ]
+                ]
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "price command without ticker shows empty watchlist",
+    "steps": [
+      {
+        "send": { "text": "/start" },
+        "expect": [
+          { "method": "sendMessage" }
+        ]
+      },
+      {
+        "send": { "callback": "onboard:skip", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "text": "/price" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "Your watchlist is empty.\n\nUse the Add Coin menu or type a ticker to start building your watchlist.",
+              "reply_markup": {
+                "inline_keyboard": [
+                  [
+                    { "text": "Add Coin", "callback_data": "menu:add" },
+                    { "text": "My Watchlist", "callback_data": "menu:watchlist" }
+                  ],
+                  [
+                    { "text": "Create Alert", "callback_data": "menu:alerts" },
+                    { "text": "My Alerts", "callback_data": "menu:myalerts" }
+                  ],
+                  [
+                    { "text": "Price Check", "callback_data": "menu:price" },
+                    { "text": "Settings", "callback_data": "menu:settings" }
+                  ],
+                  [
+                    { "text": "Help", "callback_data": "menu:help" }
+                  ]
+                ]
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "price check menu button shows empty watchlist",
+    "steps": [
+      {
+        "send": { "text": "/start" },
+        "expect": [
+          { "method": "sendMessage" }
+        ]
+      },
+      {
+        "send": { "callback": "onboard:skip", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "menu:price", "messageId": 1 },
+        "expect": [
+          { "method": "answerCallbackQuery" },
+          {
+            "method": "editMessageText",
+            "payload": {
+              "text": "Your watchlist is empty.\n\nUse the Add Coin menu or type a ticker to start building your watchlist."
+            }
+          }
+        ]
+      }
+    ]
+  }
+]
