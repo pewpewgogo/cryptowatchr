@@ -1,4 +1,4 @@
-import { inlineKeyboard } from "@agntdev/bot-toolkit";
+import { inlineKeyboard } from "./toolkit/index.js";
 import type { AlertRule, PriceSnapshot, PersistentStore, QuietHours } from "./store.js";
 import { coinIdForTicker } from "./bot.js";
 

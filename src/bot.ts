@@ -1,4 +1,4 @@
-import { createBot, menuKeyboard, inlineKeyboard } from "@agntdev/bot-toolkit";
+import { createBot, menuKeyboard, inlineKeyboard } from "./toolkit/index.js";
 import { createStore, newAlertRule, newPercentAlertRule, type AlertRule, type WatchlistEntry, type MorningSummary, type PersistentStore } from "./store.js";
 import { fetchPrices, formatPriceDisplay, PriceFetchError } from "./price.js";
 import { startPoller } from "./poller.js";
