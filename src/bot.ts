@@ -306,6 +306,11 @@ const HELP_TEXT = [
 ].join("\n");
 
 const MENU_RESPONSES: Record<string, string> = {
+  "menu:add": "Add Coin will let you add BTC, ETH, TON, or a custom ticker to your watchlist.",
+  "menu:watchlist": "My Watchlist will show your tracked coins and remove buttons.",
+  "menu:alerts": "Create Alert will guide you through threshold and percent-move alerts.",
+  "menu:price": "Price Check will show current prices for one coin or your full watchlist.",
+  "menu:settings": "Settings will manage timezone, quiet hours, cooldown, and morning summaries.",
   "menu:help": "Help will list commands and explain how CryptoWatchr alerts work.",
 };
 
@@ -378,7 +383,6 @@ function mainMenu() {
       { text: "Add Coin", data: "menu:add" },
       { text: "My Watchlist", data: "menu:watchlist" },
       { text: "Create Alert", data: "menu:alerts" },
-      { text: "My Alerts", data: "menu:myalerts" },
       { text: "Price Check", data: "menu:price" },
       { text: "Settings", data: "menu:settings" },
       { text: "Help", data: "menu:help" },
@@ -705,8 +709,8 @@ export function buildBot(store?: PersistentStore, token = process.env.BOT_TOKEN 
     clearAlertManageSession(ctx.session);
     clearWatchlistSession(ctx.session);
     clearSummarySession(ctx.session);
-    ctx.session.onboardingStep = "timezone";
-    await ctx.reply(WELCOME_TEXT, { reply_markup: timezoneKeyboard() });
+    ctx.session.onboardingStep = undefined;
+    await ctx.reply(MAIN_MENU_TEXT, { reply_markup: mainMenu() });
   });
 
   bot.command("help", async (ctx) => {
@@ -1274,41 +1278,6 @@ export function buildBot(store?: PersistentStore, token = process.env.BOT_TOKEN 
     }
 
     // --- End alert management callbacks ---
-
-    if (data === "menu:price") {
-      clearAlertSession(ctx.session);
-      clearAlertManageSession(ctx.session);
-      clearWatchlistSession(ctx.session);
-      let entries: WatchlistEntry[];
-      try {
-        entries = await effectiveStore.getWatchlist(ctx.chat!.id);
-      } catch {
-        await ctx.answerCallbackQuery({ text: "Failed to load watchlist." });
-        return;
-      }
-      if (entries.length === 0) {
-        await ctx.answerCallbackQuery();
-        await ctx.editMessageText(EMPTY_WATCHLIST_TEXT, { reply_markup: mainMenu() });
-        return;
-      }
-      try {
-        const coinIds = [...new Set(entries.map((e) => e.coinId))];
-        const data = await fetchPrices(coinIds);
-        const text = formatPriceDisplay(data, entries.map((e) => ({ ticker: e.ticker, coinId: e.coinId })));
-        await ctx.answerCallbackQuery();
-        await ctx.editMessageText(text, { reply_markup: mainMenu() });
-      } catch (err) {
-        const cbText = err instanceof PriceFetchError
-          ? priceCallbackText(err.kind)
-          : "Unable to fetch prices.";
-        const msgText = err instanceof PriceFetchError
-          ? priceErrorMessage(err.kind)
-          : "Unable to fetch price data right now. Please try again later.";
-        await ctx.answerCallbackQuery({ text: cbText });
-        await ctx.editMessageText(msgText, { reply_markup: mainMenu() });
-      }
-      return;
-    }
 
     // --- Settings callbacks ---
 
