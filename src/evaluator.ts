@@ -1,5 +1,5 @@
 import type { AlertRule, PriceSnapshot, PersistentStore, QuietHours } from "./store.js";
-import { coinIdForTicker } from "./index.js";
+import { coinIdForTicker } from "./bot.js";
 
 export const DEFAULT_COOLDOWN_MS = 60 * 60 * 1000;
 
