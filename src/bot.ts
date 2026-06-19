@@ -298,9 +298,6 @@ const HELP_TEXT = [
   "/start — Set up your CryptoWatchr profile and open the main menu",
   "/help — Show this help message",
   "/list — View your watchlist and manage tracked coins",
-  "/alerts — View and manage your price alerts",
-  "/price — Check current prices for a coin or your full watchlist",
-  "/summary — Configure your daily morning summary",
   "",
   "You can also use the menu buttons below to manage your watchlist, create alerts, check prices, and configure settings.",
 ].join("\n");
