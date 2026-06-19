@@ -62,6 +62,7 @@ export interface PersistentStore {
   getAllTrackedCoinIds(): Promise<string[]>;
   savePriceSnapshot(snapshot: PriceSnapshot): Promise<void>;
   getLatestPriceSnapshot(coinId: string): Promise<PriceSnapshot | null>;
+  getPriceSnapshotAtOrBefore(coinId: string, atMs: number): Promise<PriceSnapshot | null>;
   cleanupOldSnapshots(olderThanMs: number): Promise<void>;
   recordSentAlert(userId: number, ruleId: string, cooldownMs: number): Promise<void>;
   isAlertSuppressed(userId: number, ruleId: string): Promise<boolean>;
@@ -78,6 +79,9 @@ function createRedisClient(url: string) {
   const Redis = ioredis.default ?? ioredis.Redis ?? ioredis;
   return new Redis(url, { maxRetriesPerRequest: null, lazyConnect: false });
 }
+
+/** Minimum price sample history retained for percent-move alerts (24 hours). */
+export const PRICE_SAMPLE_RETENTION_MS = 24 * 60 * 60 * 1000;
 
 const PREFIX = "cryptowatchr:";
 const RULES_KEY = (userId: number) => `${PREFIX}alert:rules:${userId}`;
@@ -183,15 +187,28 @@ class RedisStore implements PersistentStore {
   }
 
   async savePriceSnapshot(snapshot: PriceSnapshot): Promise<void> {
-    const key = `${PREFIX}snapshot:${snapshot.coinId}`;
-    await this.#client.set(key, JSON.stringify(snapshot));
+    const latestKey = `${PREFIX}snapshot:latest:${snapshot.coinId}`;
+    await this.#client.set(latestKey, JSON.stringify(snapshot));
+
+    const seriesKey = `${PREFIX}snapshot:series:${snapshot.coinId}`;
+    await this.#client.zadd(seriesKey, snapshot.polledAt, JSON.stringify(snapshot));
+
+    const cutoff = Date.now() - PRICE_SAMPLE_RETENTION_MS;
+    await this.#client.zremrangebyscore(seriesKey, 0, cutoff);
   }
 
   async getLatestPriceSnapshot(coinId: string): Promise<PriceSnapshot | null> {
-    const key = `${PREFIX}snapshot:${coinId}`;
+    const key = `${PREFIX}snapshot:latest:${coinId}`;
     const raw = await this.#client.get(key);
     if (!raw) return null;
     return JSON.parse(raw) as PriceSnapshot;
+  }
+
+  async getPriceSnapshotAtOrBefore(coinId: string, atMs: number): Promise<PriceSnapshot | null> {
+    const seriesKey = `${PREFIX}snapshot:series:${coinId}`;
+    const results: string[] = await this.#client.zrevrangebyscore(seriesKey, atMs, 0, "LIMIT", 0, 1);
+    if (results.length === 0) return null;
+    return JSON.parse(results[0]) as PriceSnapshot;
   }
 
   async recordSentAlert(userId: number, ruleId: string, cooldownMs: number): Promise<void> {
@@ -205,8 +222,17 @@ class RedisStore implements PersistentStore {
     return exists === 1;
   }
 
-  async cleanupOldSnapshots(_olderThanMs: number): Promise<void> {
-    // Redis stores only the latest snapshot per coin; keys are overwritten, no accumulation.
+  async cleanupOldSnapshots(olderThanMs: number): Promise<void> {
+    const retentionMs = Math.max(olderThanMs, PRICE_SAMPLE_RETENTION_MS);
+    const cutoff = Date.now() - retentionMs;
+    let cursor = "0";
+    do {
+      const [nextCursor, keys] = await this.#client.scan(cursor, "MATCH", `${PREFIX}snapshot:series:*`, "COUNT", 100);
+      cursor = nextCursor;
+      for (const key of keys) {
+        await this.#client.zremrangebyscore(key, 0, cutoff);
+      }
+    } while (cursor !== "0");
   }
 
   async setTimezone(userId: number, timezone: string): Promise<void> {
@@ -369,8 +395,21 @@ class MemoryStore implements PersistentStore {
     return arr.reduce((latest, s) => s.polledAt > latest.polledAt ? s : latest, arr[0]);
   }
 
+  async getPriceSnapshotAtOrBefore(coinId: string, atMs: number): Promise<PriceSnapshot | null> {
+    const arr = this.#snapshots.get(coinId);
+    if (!arr || arr.length === 0) return null;
+    let best: PriceSnapshot | null = null;
+    for (const snapshot of arr) {
+      if (snapshot.polledAt <= atMs && (!best || snapshot.polledAt > best.polledAt)) {
+        best = snapshot;
+      }
+    }
+    return best;
+  }
+
   async cleanupOldSnapshots(olderThanMs: number): Promise<void> {
-    const cutoff = Date.now() - olderThanMs;
+    const retentionMs = Math.max(olderThanMs, PRICE_SAMPLE_RETENTION_MS);
+    const cutoff = Date.now() - retentionMs;
     for (const [coinId, arr] of this.#snapshots) {
       const filtered = arr.filter((s) => s.polledAt >= cutoff);
       if (filtered.length === 0) {
@@ -698,6 +737,18 @@ class PostgresStore implements PersistentStore {
     return rowToPriceSnapshot(res.rows[0]);
   }
 
+  async getPriceSnapshotAtOrBefore(coinId: string, atMs: number): Promise<PriceSnapshot | null> {
+    const res = await this.#pool.query(
+      `SELECT coin_id, usd, usd_24h_change, last_updated_at, polled_at
+       FROM price_snapshots
+       WHERE coin_id = $1 AND polled_at <= $2
+       ORDER BY polled_at DESC LIMIT 1`,
+      [coinId, atMs],
+    );
+    if (res.rows.length === 0) return null;
+    return rowToPriceSnapshot(res.rows[0]);
+  }
+
   async recordSentAlert(userId: number, ruleId: string, cooldownMs: number): Promise<void> {
     await this.#pool.query(
       `INSERT INTO sent_alerts (user_id, rule_id, expires_at)
@@ -725,7 +776,8 @@ class PostgresStore implements PersistentStore {
   }
 
   async cleanupOldSnapshots(olderThanMs: number): Promise<void> {
-    const cutoff = Date.now() - olderThanMs;
+    const retentionMs = Math.max(olderThanMs, PRICE_SAMPLE_RETENTION_MS);
+    const cutoff = Date.now() - retentionMs;
     await this.#pool.query(
       `DELETE FROM price_snapshots WHERE polled_at < $1`,
       [cutoff],

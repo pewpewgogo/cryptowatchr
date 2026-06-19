@@ -1,11 +1,11 @@
-import type { PersistentStore } from "./store.js";
+import { PRICE_SAMPLE_RETENTION_MS, type PersistentStore } from "./store.js";
 import { fetchPrices } from "./price.js";
 import { evaluateAlertRules, formatAlertDelivery, DEFAULT_COOLDOWN_MS } from "./evaluator.js";
 
 const POLL_INTERVAL_MS = 60_000;
 const MAX_RETRIES = 3;
 const BASE_RETRY_DELAY_MS = 2000;
-const RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+const RETENTION_MS = Math.max(30 * 24 * 60 * 60 * 1000, PRICE_SAMPLE_RETENTION_MS);
 const CLEANUP_INTERVAL_POLLS = 60;
 
 async function fetchPricesWithRetry(coinIds: string[]): Promise<Record<string, { usd: number; usd_24h_change: number | null; last_updated_at: number }> | null> {

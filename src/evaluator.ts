@@ -135,7 +135,8 @@ export async function evaluateAlertRules(
         const currentPrice = priceData[coinId]?.usd;
         if (currentPrice == null || currentPrice <= 0) continue;
 
-        const snapshot = await store.getLatestPriceSnapshot(coinId);
+        const lookbackMs = (rule.timeframeMinutes ?? 60) * 60 * 1000;
+        const snapshot = await store.getPriceSnapshotAtOrBefore(coinId, now - lookbackMs);
         if (!snapshot || snapshot.usd <= 0) continue;
 
         const oldPrice = snapshot.usd;
@@ -161,7 +162,13 @@ export async function evaluateAlertRules(
     const currentPrice = priceData[coinId]?.usd;
     if (currentPrice == null || currentPrice <= 0) continue;
 
-    const snapshot = await store.getLatestPriceSnapshot(coinId);
+    let snapshot: PriceSnapshot | null;
+    if (rule.type === "percent") {
+      const lookbackMs = (rule.timeframeMinutes ?? 60) * 60 * 1000;
+      snapshot = await store.getPriceSnapshotAtOrBefore(coinId, now - lookbackMs);
+    } else {
+      snapshot = await store.getLatestPriceSnapshot(coinId);
+    }
     if (!snapshot || snapshot.usd <= 0) continue;
 
     const oldPrice = snapshot.usd;
